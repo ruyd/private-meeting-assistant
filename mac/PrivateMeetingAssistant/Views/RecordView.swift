@@ -25,6 +25,7 @@ private struct NewRecordingView: View {
     @AppStorage("micDeviceUID") private var savedMicUID = ""
     @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
     @AppStorage(SettingsKeys.language) private var language = "auto"
+    /// Set in Settings › Transcription › While recording.
     @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     @AppStorage(SettingsKeys.saveAudio) private var saveAudio = true
@@ -245,9 +246,6 @@ private struct NewRecordingView: View {
             recordButton
 
             HStack(spacing: 8) {
-                Toggle("Remove speaker echo", isOn: $removeEcho)
-                    .disabled(!session.captureSystemAudio)
-                    .help("Keeps the other participants' voices, heard through your speakers, out of “Me”")
                 Toggle("Tell speakers apart", isOn: $identifySpeakers)
                     .help(session.captureSystemAudio
                         ? "Label each voice heard through the computer as its own participant instead of one “Them”"
