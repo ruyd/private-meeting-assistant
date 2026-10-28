@@ -679,7 +679,7 @@ private struct LiveRecordingView: View {
     }
 
     private var screenshotCaption: String {
-        session.captureSystemAudio && session.target.bundleID != nil ? "Screenshot · \(session.target.label)" : "Screenshot · Screen"
+        recorder.screenshotApp.map { "Screenshot · \($0.name)" } ?? "Screenshot"
     }
 
     private enum Item: Identifiable {
@@ -844,8 +844,9 @@ private struct LiveRecordingView: View {
                 }
             }
             .keyboardShortcut("s", modifiers: [.command, .shift])
-            .disabled(recorder.phase != .recording || recorder.isTakingScreenshot)
-            .help("Save a screenshot of \(session.target.bundleID != nil && session.captureSystemAudio ? session.target.label : "the screen") in the meeting's folder (⇧⌘S)")
+            .disabled(recorder.phase != .recording || recorder.isTakingScreenshot || recorder.screenshotApp == nil)
+            .help(recorder.screenshotApp.map { "Save a screenshot of \($0.name)'s window in the meeting's folder (⇧⌘S)" }
+                ?? "Screenshots only capture the app you're recording; pick one under Sources next time")
 
             Button("Copy Transcript", systemImage: "doc.on.doc") {
                 copy(TranscriptExport.plainText(recorder.lines.map { ($0.source, $0.startMs, $0.text) }))

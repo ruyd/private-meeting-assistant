@@ -162,7 +162,7 @@ private struct PermissionSettings: View {
                 )
                 permission(
                     "Screen Recording", status: screenPermission ? "Allowed" : "Not allowed", allowed: screenPermission,
-                    note: "Only for screenshots during meetings. Nothing on screen is captured unless you press Screenshot.",
+                    note: "Only for screenshots during meetings, and only of the app you're recording, never the rest of your screen. Nothing is captured unless you press Screenshot.",
                     pane: "Privacy_ScreenCapture"
                 )
             } header: {

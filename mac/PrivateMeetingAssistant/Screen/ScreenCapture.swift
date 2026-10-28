@@ -2,26 +2,22 @@ import AppKit
 import ImageIO
 import ScreenCaptureKit
 
-/// Screenshots during a meeting, via ScreenCaptureKit. Needs the Screen Recording permission, which
-/// the first screenshot asks for.
+/// Screenshots during a meeting, via ScreenCaptureKit: only ever of the app being recorded, never the
+/// rest of the screen. Needs the Screen Recording permission, which the first screenshot asks for.
 enum ScreenCapture {
     static var hasPermission: Bool { CGPreflightScreenCaptureAccess() }
 
-    /// A PNG of the app's main window, or of the main display (without this app's windows) when no app
-    /// is given or it has no window on screen.
-    static func screenshot(of bundleID: String?) async throws -> Data {
+    /// A PNG of the app's main window. Fails rather than capture anything else when the app has no
+    /// window on screen (minimized, or in another Space).
+    static func screenshot(of bundleID: String, appName: String) async throws -> Data {
         guard hasPermission else {
             // Shows the system prompt the first time; after that the user has to allow it in System Settings.
             CGRequestScreenCaptureAccess()
             throw ScreenCaptureError.permission
         }
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-        let image: CGImage
-        if let bundleID, let window = mainWindow(of: bundleID, in: content) {
-            image = try await capture(window)
-        } else {
-            image = try await captureDisplay(in: content)
-        }
+        guard let window = mainWindow(of: bundleID, in: content) else { throw ScreenCaptureError.noWindow(appName) }
+        let image = try await capture(window)
         guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
             throw ScreenCaptureError.encoding
         }
@@ -41,15 +37,6 @@ enum ScreenCapture {
     private static func capture(_ window: SCWindow) async throws -> CGImage {
         let filter = SCContentFilter(desktopIndependentWindow: window)
         return try await capture(filter, size: window.frame.size)
-    }
-
-    private static func captureDisplay(in content: SCShareableContent) async throws -> CGImage {
-        guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else {
-            throw ScreenCaptureError.noDisplay
-        }
-        let own = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
-        let filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
-        return try await capture(filter, size: CGSize(width: display.width, height: display.height))
     }
 
     /// At full (Retina) resolution.
@@ -81,20 +68,20 @@ enum ScreenCapture {
 
 enum ScreenCaptureError: LocalizedError {
     case permission
-    case noDisplay
+    case noWindow(String)
     case encoding
 
     var errorDescription: String? {
         switch self {
         case .permission: "Allow Screen Recording for Private Meeting Assistant in System Settings › Privacy & Security, then try again."
-        case .noDisplay: "No display is available."
+        case .noWindow(let app): "\(app) has no window on screen. Bring its meeting window into view (not minimized or in another Space), then try again."
         case .encoding: "Couldn't save the image."
         }
     }
 }
 
 extension SystemAudioTarget {
-    /// The app to screenshot, or nil for the whole screen.
+    /// The app to screenshot, or nil when recording all system audio (no screenshots then).
     var bundleID: String? {
         if case .app(let id, _) = self { id } else { nil }
     }

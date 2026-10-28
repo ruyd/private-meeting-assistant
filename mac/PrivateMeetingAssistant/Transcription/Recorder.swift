@@ -161,17 +161,23 @@ final class Recorder {
         phase = .idle
     }
 
-    /// Screenshots the app being recorded (or the screen, when recording all audio) into the meeting's
-    /// folder, at the current point in the transcript.
+    /// The app being recorded, which screenshots are limited to; nil when recording all system audio or
+    /// the microphone only, where there's no app to capture.
+    var screenshotApp: (bundleID: String, name: String)? {
+        guard capture.captureSystemAudio, let id = capture.target.bundleID else { return nil }
+        return (id, capture.target.label)
+    }
+
+    /// Screenshots the app being recorded into the meeting's folder, at the current point in the transcript.
     func takeScreenshot() async {
-        guard phase == .recording, !isTakingScreenshot, let meetingID, let startedAt,
+        guard phase == .recording, !isTakingScreenshot, let app = screenshotApp, let meetingID, let startedAt,
               let folder = try? library.store?.meeting(meetingID)?.folder
         else { return }
         isTakingScreenshot = true
         defer { isTakingScreenshot = false }
         let atMs = Int(Date().timeIntervalSince(startedAt) * 1000)
         do {
-            let png = try await ScreenCapture.screenshot(of: capture.captureSystemAudio ? capture.target.bundleID : nil)
+            let png = try await ScreenCapture.screenshot(of: app.bundleID, appName: app.name)
             screenshots.append(try MeetingFiles.saveScreenshot(png, at: atMs, in: folder))
             scheduleFileWrite(meetingID)
         } catch {
