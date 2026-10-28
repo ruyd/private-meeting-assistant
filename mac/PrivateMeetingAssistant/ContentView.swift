@@ -34,11 +34,7 @@ struct ContentView: View {
         } detail: {
             switch section ?? .record {
             case .record:
-                ContentUnavailableView(
-                    "Recording isn't available yet",
-                    systemImage: "waveform",
-                    description: Text("Microphone and system audio capture arrive in the next milestone.")
-                )
+                RecordView()
             case .meetings:
                 ContentUnavailableView(
                     "No meetings yet",
