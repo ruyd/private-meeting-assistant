@@ -38,7 +38,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.productivity
         NSMicrophoneUsageDescription: Private Meeting Assistant transcribes what you say in meetings. Audio never leaves this Mac.
-        NSDocumentsFolderUsageDescription: When you uninstall Private Meeting Assistant, it can keep a copy of your meetings in Documents › Private Meeting Assistant.
+        NSDocumentsFolderUsageDescription: Private Meeting Assistant saves meetings in the folder you chose, which is in your Documents folder.
         NSAudioCaptureUsageDescription: Private Meeting Assistant transcribes the other participants in your calls. Audio never leaves this Mac.
     entitlements:
       path: PrivateMeetingAssistant/PrivateMeetingAssistant.entitlements

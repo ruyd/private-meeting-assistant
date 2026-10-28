@@ -25,7 +25,7 @@
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Private Meeting Assistant transcribes the other participants in your calls. Audio never leaves this Mac.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>When you uninstall Private Meeting Assistant, it can keep a copy of your meetings in Documents › Private Meeting Assistant.</string>
+	<string>Private Meeting Assistant saves meetings in the folder you chose, which is in your Documents folder.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Private Meeting Assistant transcribes what you say in meetings. Audio never leaves this Mac.</string>
 </dict>
