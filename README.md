@@ -69,6 +69,8 @@ xcodebuild -project PrivateMeetingAssistant.xcodeproj -scheme PrivateMeetingAssi
 
 Unit tests cover capture helpers, voice detection, echo removal, storage and search, and summary parsing. The transcription tests run the real model once one is downloaded.
 
+To build, launch and screenshot the Debug app from the command line (with made-up meetings), use `mac/scripts/run-app.sh`; Claude Code picks it up through the `run-app` skill in `.claude/skills/`.
+
 Debug builds also accept command-line self-tests: `--capture-test`, `--transcribe-test`, `--prepare-model` and `--install-ollama` (see `mac/PrivateMeetingAssistant/Debug/CaptureSelfTest.swift`), and `-sampleMeetings YES` shows made-up meetings instead of yours, for screenshots.
 
 ## Release
