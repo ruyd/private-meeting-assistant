@@ -71,9 +71,7 @@ struct MeetingView: View {
                         Text("\(meeting.startedAt.formatted(date: .complete, time: .shortened)) · \(TranscriptExport.timestamp(meeting.durationMs))")
                             .foregroundStyle(.secondary)
                         if let audio {
-                            Button("Play Audio", systemImage: "waveform") { NSWorkspace.shared.open(audio) }
-                                .controlSize(.small)
-                                .help("Open the meeting's audio recording (audio.m4a)")
+                            AudioPlayerBar(url: audio)
                         }
                     }
                     if !speakers.isEmpty {
