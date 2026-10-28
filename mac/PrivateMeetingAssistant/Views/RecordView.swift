@@ -764,6 +764,9 @@ private struct LiveRecordingView: View {
         }
         .task {
             if session.captureSystemAudio, let id = session.target.bundleID { appIcon = ScreenCapture.icon(of: id) }
+        }
+        // Again whenever the microphone changes, e.g. from the lid-closed notice.
+        .task(id: session.micDeviceUID) {
             micName = InputDevices.effective(chosenUID: session.micDeviceUID, among: InputDevices.all())?.name
         }
     }
@@ -812,7 +815,11 @@ private struct LiveRecordingView: View {
             .font(.callout)
 
             if let issue = session.micIssue {
-                MicIssueRow(issue: issue) { session.selectMic(uid: $0.uid) }
+                MicIssueRow(issue: issue) { device in
+                    session.selectMic(uid: device.uid)
+                    // Remembered for the next recording too, as when picked on the New Recording page.
+                    UserDefaults.standard.set(device.uid, forKey: "micDeviceUID")
+                }
             }
             if let error = recorder.error ?? session.error {
                 Label(error, systemImage: "exclamationmark.octagon").foregroundStyle(.red)
