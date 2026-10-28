@@ -123,6 +123,9 @@ final class Recorder {
             save { try $0.endMeeting(meetingID, at: Date()) }
             fileWrite?.cancel()
             library.writeFiles(meetingID)
+            if !lines.isEmpty, UserDefaults.standard.object(forKey: MeetingLibrary.autoSummarizeKey) as? Bool ?? true {
+                Task { [library] in await library.summarize(meetingID) }
+            }
         }
         library.refresh()
         self.pipeline = nil

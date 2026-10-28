@@ -100,6 +100,22 @@ final class MeetingStore: Sendable {
         }
     }
 
+    /// "none", "running", "done", or "error: <reason>".
+    func setSummaryStatus(_ id: Int64, _ status: String) throws {
+        try db.write { db in
+            try db.execute(sql: "UPDATE meetings SET summary_status = ? WHERE id = ?", arguments: [status, id])
+        }
+    }
+
+    /// Stores the summary (status "done") and indexes it for search.
+    func saveSummary(_ id: Int64, _ summary: MeetingSummary) throws {
+        let json = String(decoding: try JSONEncoder().encode(summary), as: UTF8.self)
+        try db.write { db in
+            try db.execute(sql: "UPDATE meetings SET summary_json = ?, summary_status = 'done' WHERE id = ?", arguments: [json, id])
+            try db.execute(sql: "UPDATE meetings_fts SET summary = ? WHERE meeting_id = ?", arguments: [summary.searchableText, id])
+        }
+    }
+
     func renameMeeting(_ id: Int64, to title: String) throws {
         try db.write { db in
             try db.execute(sql: "UPDATE meetings SET title = ? WHERE id = ?", arguments: [title, id])

@@ -24,6 +24,12 @@ Known gaps and ideas for the Swift app, roughly in priority order. Remove items 
 - **Rebuild the index from the meeting folders.** Each meeting is a folder of Markdown files; the database is only the index for the list and search. After reinstalling (or moving folders around), scan the meetings folder and re-index `transcript.md` and `summary.md`. The same would pick up edits made to those files outside the app, which are currently not read back.
 - **Screenshots and video in the meeting folder.** The folder layout is ready for them; the capture features don't exist yet.
 
+## Summaries
+
+- **Action item owners.** The model sometimes assigns "Me" to a task the other side took on or asked for (e.g. "call back on Monday", said by Them). The prompt could spell out that "Me" is only for things the recorder committed to.
+- **More model choices.** Settings offers to download only the recommended model (gemma4:12b, or gemma3:4b under 16 GB); other Ollama models can be picked once installed. A short list of tested models with sizes would help.
+- **Stop the downloaded Ollama when idle.** It starts on demand and stops when the app quits; stopping it a few minutes after the last summary would free memory sooner.
+
 ## Speakers
 
 - **Tell remote participants apart.** "Them" is everyone on the call. WhisperKit ships SpeakerKit (diarization), which could split it into Speaker 1, Speaker 2, …

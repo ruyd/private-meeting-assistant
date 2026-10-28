@@ -81,6 +81,48 @@ final class MeetingLibrary {
         refresh()
     }
 
+    // MARK: Summaries
+
+    static let autoSummarizeKey = "autoSummarize"
+    static let summaryEngineKey = "summaryEngine"
+    static let summaryModelKey = "summaryModel"
+
+    static var summaryModel: String {
+        UserDefaults.standard.string(forKey: summaryModelKey) ?? SummaryEngine.recommendedModel.name
+    }
+
+    /// Writes the meeting's summary with the engine and model chosen in Settings, saving it to the index
+    /// and summary.md. Progress and errors show up as the meeting's summary status.
+    func summarize(_ id: Int64) async {
+        guard let store else { return }
+        try? store.setSummaryStatus(id, "running")
+        refresh()
+        do {
+            let model = Self.summaryModel
+            let choice = SummaryEngine.Choice(rawValue: UserDefaults.standard.string(forKey: Self.summaryEngineKey) ?? "") ?? .automatic
+            let url = try await SummaryEngine.shared.endpoint(choice: choice, model: model)
+            let summary = try await Summarizer(baseURL: url, model: model).summarize(store.segments(of: id))
+            try store.saveSummary(id, summary)
+            writeFiles(id)
+        } catch {
+            log.error("summary failed: \(error.localizedDescription, privacy: .public)")
+            try? store.setSummaryStatus(id, "error: \(error.localizedDescription)")
+        }
+        refresh()
+    }
+
+    func setActionItem(_ id: Int64, index: Int, done: Bool) {
+        guard let store, var summary = (try? store.meeting(id))?.summary, summary.actionItems.indices.contains(index) else { return }
+        summary.actionItems[index].done = done
+        do {
+            try store.saveSummary(id, summary)
+        } catch {
+            self.error = error.localizedDescription
+        }
+        writeFiles(id)
+        refresh()
+    }
+
     /// Opens the meeting's folder in Finder, with transcript.md selected.
     func showInFinder(_ id: Int64) {
         guard let folder = writeFiles(id) else { return }

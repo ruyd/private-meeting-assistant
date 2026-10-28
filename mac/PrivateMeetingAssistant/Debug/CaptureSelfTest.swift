@@ -19,6 +19,24 @@ enum CaptureSelfTest {
             NSApp.terminate(nil)
             return
         }
+        if args.contains("--install-ollama") {
+            // Downloads, verifies and starts the app's own Ollama, then stops it.
+            let engine = SummaryEngine.shared
+            await engine.installOllama()
+            var version = "-"
+            if engine.isDownloadedInstalled {
+                do {
+                    try await engine.startServer()
+                    version = try await SummaryEngine.version(at: SummaryEngine.downloadedURL)
+                } catch {
+                    version = "start failed: \(error.localizedDescription)"
+                }
+                engine.stopServer()
+            }
+            log.notice("install-ollama: installed \(engine.isDownloadedInstalled), version \(version, privacy: .public), error \(engine.error ?? "none", privacy: .public)")
+            NSApp.terminate(nil)
+            return
+        }
         if let i = args.firstIndex(of: "--transcribe-test"), args.count > i + 2, let seconds = Double(args[i + 1]) {
             await transcribe(seconds: seconds, to: URL(fileURLWithPath: args[i + 2], isDirectory: true), args: args)
             NSApp.terminate(nil)
@@ -100,10 +118,23 @@ extension CaptureSelfTest {
         let lines = recorder.lines.map {
             ["speaker": $0.source.speaker, "startMs": $0.startMs, "endMs": $0.endMs, "text": $0.text] as [String: Any]
         }
+        // Recording stopped; with auto-summarize on, a summary is being written. Wait for it.
+        var summaryStatus = "none"
+        var summaryText: String?
+        if let id = recorder.meetingID {
+            for _ in 0..<600 {
+                summaryStatus = (try? store?.meeting(id))??.summaryStatus ?? "none"
+                if summaryStatus != "running" && summaryStatus != "none" { break }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            summaryText = (try? store?.meeting(id))??.summary?.summary
+        }
         let saved = recorder.meetingID.flatMap { try? store?.segments(of: $0) } ?? []
         let summary: [String: Any] = [
             "model": model.id,
             "savedLines": saved.count,
+            "summaryStatus": summaryStatus,
+            "summary": summaryText ?? NSNull(),
             "savedMatchesScreen": saved.map(\.text) == recorder.lines.map(\.text),
             "finishSeconds": Double((ContinuousClock.now - stopClock).components.seconds),
             "lines": lines,

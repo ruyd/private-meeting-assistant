@@ -50,6 +50,8 @@ struct SettingsView: View {
                 if englishOnly { Text("English-only models always transcribe English.") }
             }
 
+            SummarySettings()
+
             Section {
                 Toggle("Remove speaker echo from my microphone", isOn: $removeEcho)
             } header: {
@@ -199,4 +201,86 @@ func chooseMeetingsFolder() -> URL? {
     panel.canCreateDirectories = true
     panel.directoryURL = MeetingFiles.root ?? suggested
     return panel.runModal() == .OK ? panel.url : nil
+}
+
+/// Settings › Summaries: which Ollama writes them, which model, and whether to summarize automatically.
+private struct SummarySettings: View {
+    @AppStorage(MeetingLibrary.summaryEngineKey) private var choice = SummaryEngine.Choice.automatic.rawValue
+    @AppStorage(MeetingLibrary.summaryModelKey) private var model = SummaryEngine.recommendedModel.name
+    @AppStorage(MeetingLibrary.autoSummarizeKey) private var autoSummarize = true
+    private let ollama = SummaryEngine.shared
+    private let bytes = ByteCountFormatter()
+
+    /// The engine summaries will actually use with the current choice.
+    private var usesYours: Bool {
+        switch SummaryEngine.Choice(rawValue: choice) ?? .automatic {
+        case .yours: true
+        case .downloaded: false
+        case .automatic: ollama.yours.problem == nil
+        }
+    }
+
+    private var models: [String] { usesYours ? ollama.yours.models : ollama.downloadedModels }
+
+    var body: some View {
+        Section {
+            Picker("Engine", selection: $choice) {
+                Text("Automatic").tag(SummaryEngine.Choice.automatic.rawValue)
+                Text("Your Ollama").tag(SummaryEngine.Choice.yours.rawValue)
+                    .selectionDisabled(ollama.yours.problem != nil)
+                Text("Downloaded Ollama").tag(SummaryEngine.Choice.downloaded.rawValue)
+            }
+            LabeledContent("Your Ollama") {
+                if let problem = ollama.yours.problem {
+                    Text(problem).foregroundStyle(.secondary)
+                } else {
+                    Text("\(ollama.yours.version ?? "") · ^[\(ollama.yours.models.count) local model](inflect: true)").foregroundStyle(.secondary)
+                }
+            }
+            LabeledContent("Downloaded Ollama") {
+                if let progress = ollama.progress["ollama"] {
+                    ProgressView(value: progress).frame(width: 140)
+                } else if ollama.isDownloadedInstalled {
+                    Text("Installed (\(SummaryEngine.version))").foregroundStyle(.secondary)
+                } else {
+                    HStack {
+                        Text("\(bytes.string(fromByteCount: SummaryEngine.archiveBytes)) download").foregroundStyle(.secondary)
+                        Button("Download") { Task { await ollama.installOllama() } }
+                            .disabled(SummaryEngine.spaceProblem(modelBytes: SummaryEngine.recommendedModel.bytes) != nil)
+                    }
+                }
+            }
+            Picker("Model", selection: $model) {
+                ForEach(models, id: \.self) { Text($0).tag($0) }
+                if !models.contains(model) {
+                    Text("\(model) (not downloaded)").tag(model)
+                }
+            }
+            if !models.contains(model), usesYours || ollama.isDownloadedInstalled {
+                let recommended = SummaryEngine.recommendedModel
+                HStack {
+                    if let progress = ollama.progress[model] {
+                        ProgressView(value: progress).frame(width: 140)
+                        Text("Downloading \(model)…").foregroundStyle(.secondary)
+                    } else {
+                        Text(usesYours ? "Your Ollama doesn't have \(model)." : "\(model) isn't downloaded yet.").foregroundStyle(.secondary)
+                        if model == recommended.name {
+                            Button("Download (\(bytes.string(fromByteCount: recommended.bytes)))") {
+                                Task { await ollama.pull(model, bytes: recommended.bytes, intoYours: usesYours) }
+                            }
+                        }
+                    }
+                }
+            }
+            Toggle("Summarize automatically when a recording stops", isOn: $autoSummarize)
+            if let error = ollama.error {
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+            }
+        } header: {
+            Text("Summaries")
+        } footer: {
+            Text("Summaries are written on this Mac by a local model in Ollama. Automatic uses your Ollama when it's running, otherwise one downloaded here (it runs privately and stops when the app quits). Cloud models are never used.")
+        }
+        .task { await ollama.refresh() }
+    }
 }

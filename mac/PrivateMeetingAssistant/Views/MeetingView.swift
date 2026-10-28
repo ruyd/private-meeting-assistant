@@ -43,6 +43,8 @@ struct MeetingView: View {
             Text("It's removed from your meetings, and its folder (transcript and summary) moves to the Trash.")
         }
         .task(id: route) { load() }
+        // Picks up a summary written in the background, renames and action-item changes.
+        .onChange(of: library.meetings) { meeting = library.meetings.first { $0.id == route.meetingID } ?? meeting }
     }
 
     private func content(_ meeting: Meeting) -> some View {
@@ -58,9 +60,7 @@ struct MeetingView: View {
                     if let error {
                         Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                     }
-                    if let summary = meeting.summary {
-                        SummaryView(summary: summary)
-                    }
+                    SummarySection(meeting: meeting, hasTranscript: !segments.isEmpty)
                     Text("Transcript").font(.headline)
                     if segments.isEmpty {
                         Text("Nothing was transcribed.").foregroundStyle(.secondary)
@@ -107,27 +107,52 @@ struct MeetingView: View {
     }
 }
 
-private struct SummaryView: View {
-    let summary: MeetingSummary
+/// The summary, or what's happening with it: a Summarize button, progress while it's written, or why
+/// it failed.
+private struct SummarySection: View {
+    let meeting: Meeting
+    let hasTranscript: Bool
+    @Environment(MeetingLibrary.self) private var library
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Summary").font(.headline)
-            Text(summary.summary).textSelection(.enabled)
-            if !summary.decisions.isEmpty {
-                Text("Decisions").font(.subheadline.bold())
-                ForEach(summary.decisions, id: \.self) { Label($0, systemImage: "checkmark.seal").textSelection(.enabled) }
-            }
-            if !summary.actionItems.isEmpty {
-                Text("Action items").font(.subheadline.bold())
-                ForEach(summary.actionItems, id: \.self) { item in
-                    Label {
-                        Text(item.text) + Text(item.owner.map { " — \($0)" } ?? "").foregroundStyle(.secondary)
-                    } icon: {
-                        Image(systemName: item.done ? "checkmark.square" : "square")
+            HStack {
+                Text("Summary").font(.headline)
+                Spacer()
+                if meeting.summaryStatus == "running" {
+                    ProgressView().controlSize(.small)
+                    Text("Writing with \(MeetingLibrary.summaryModel)…").foregroundStyle(.secondary)
+                } else if hasTranscript {
+                    Button(meeting.summary == nil ? "Summarize" : "Regenerate") {
+                        Task { await library.summarize(meeting.id) }
                     }
-                    .textSelection(.enabled)
                 }
+            }
+            if meeting.summaryStatus.hasPrefix("error: ") {
+                Label(String(meeting.summaryStatus.dropFirst(7)), systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            }
+            if let summary = meeting.summary {
+                Text(summary.summary).textSelection(.enabled)
+                if !summary.decisions.isEmpty {
+                    Text("Decisions").font(.subheadline.bold())
+                    ForEach(summary.decisions, id: \.self) { Label($0, systemImage: "checkmark.seal").textSelection(.enabled) }
+                }
+                if !summary.actionItems.isEmpty {
+                    Text("Action items").font(.subheadline.bold())
+                    ForEach(Array(summary.actionItems.enumerated()), id: \.offset) { index, item in
+                        Toggle(isOn: Binding(
+                            get: { item.done },
+                            set: { library.setActionItem(meeting.id, index: index, done: $0) }
+                        )) {
+                            Text(item.text) + Text(item.owner.map { " — \($0)" } ?? "").foregroundStyle(.secondary)
+                        }
+                        .toggleStyle(.checkbox)
+                    }
+                }
+            } else if meeting.summaryStatus == "none" && hasTranscript {
+                Text("Summarize to get the main points, decisions and action items, written by a model on this Mac.")
+                    .foregroundStyle(.secondary)
             }
         }
         .padding()
