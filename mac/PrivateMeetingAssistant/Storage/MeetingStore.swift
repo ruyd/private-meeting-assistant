@@ -47,7 +47,10 @@ final class MeetingStore: Sendable {
 
     private let db: DatabaseQueue
 
+    /// In the app's data folder, which needs no permission prompt. On uninstall the user can keep a
+    /// copy in Documents (`keptCopyFolder`).
     static var defaultURL: URL { ModelStore.dataFolder.appending(path: "meetings.sqlite") }
+    static var keptCopyFolder: URL { URL.documentsDirectory.appending(path: "Private Meeting Assistant", directoryHint: .isDirectory) }
 
     static func open(at url: URL = defaultURL) throws -> MeetingStore {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -69,6 +72,14 @@ final class MeetingStore: Sendable {
             // doesn't look live forever. A summary that was being written was interrupted.
             try db.execute(sql: "UPDATE meetings SET ended_at = started_at WHERE ended_at IS NULL")
             try db.execute(sql: "UPDATE meetings SET summary_status = 'none' WHERE summary_status = 'running'")
+        }
+    }
+
+    /// Writes a self-contained copy of the whole archive to `url` (which must not exist), consistent
+    /// even while recording.
+    func backUp(to url: URL) throws {
+        try db.writeWithoutTransaction { db in
+            try db.execute(sql: "VACUUM INTO ?", arguments: [url.path])
         }
     }
 

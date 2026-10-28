@@ -43,6 +43,21 @@ struct MeetingStoreTests {
         #expect(try store.search("planning").isEmpty)
     }
 
+    @Test func backUpWritesACompleteCopy() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try MeetingStore.open(at: dir.appending(path: "meetings.sqlite"))
+        let id = try store.createMeeting(title: "Kept", startedAt: Date())
+        _ = try store.insertSegment(meetingID: id, source: .mic, startMs: 0, endMs: 1_000, text: "Remember the budget review.")
+
+        let copyURL = dir.appending(path: "copy.sqlite")
+        try store.backUp(to: copyURL)
+        let copy = try MeetingStore.open(at: copyURL)
+        #expect(try copy.meetings().map(\.title) == ["Kept"])
+        #expect(try copy.search("budget").count == 1)
+    }
+
     @Test func markdownExport() {
         let meeting = Meeting(
             id: 1, title: "Sync", startedAt: Date(), endedAt: nil,

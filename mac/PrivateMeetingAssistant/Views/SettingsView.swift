@@ -12,6 +12,9 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
     @AppStorage(SettingsKeys.language) private var language = "auto"
     @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
+    @AppStorage(Uninstaller.keepMeetingsKey) private var keepMeetings = true
+    @State private var confirmUninstall = false
+    @State private var uninstallError: String?
     @State private var micPermission = MicCapture.permission
     private let store = ModelStore.shared
 
@@ -69,6 +72,32 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section {
+                LabeledContent("Meetings") {
+                    HStack {
+                        Text(MeetingStore.defaultURL.deletingLastPathComponent().path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                        Button("Show in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([MeetingStore.defaultURL])
+                        }
+                    }
+                }
+                Toggle("Keep my meetings when uninstalling", isOn: $keepMeetings)
+                    .help("A copy is saved to Documents › Private Meeting Assistant before the app is removed.")
+                HStack {
+                    Spacer()
+                    Button("Uninstall Private Meeting Assistant…", role: .destructive) { confirmUninstall = true }
+                }
+                if let uninstallError {
+                    Label(uninstallError, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                }
+            } header: {
+                Text("Data")
+            } footer: {
+                Text("Uninstall moves the app, its speech models, settings and meetings to the Trash. With the box checked, a copy of your meetings is saved to Documents › Private Meeting Assistant first (macOS may ask to allow access to Documents). Dragging the app to the Trash yourself leaves everything else in place.")
+            }
+
             Section("About") {
                 LabeledContent("Version", value: version)
                 LabeledContent("Privacy", value: "Audio and transcripts stay on this Mac.")
@@ -76,6 +105,17 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
+        .confirmationDialog("Uninstall Private Meeting Assistant?", isPresented: $confirmUninstall) {
+            Button(keepMeetings ? "Uninstall, Keep Meetings" : "Uninstall and Delete Meetings", role: .destructive) {
+                do {
+                    try Uninstaller.run(keepMeetings: keepMeetings, store: MeetingLibrary.shared.store)
+                } catch {
+                    uninstallError = "Couldn't finish uninstalling: \(error.localizedDescription)"
+                }
+            }
+        } message: {
+            Text("These move to the Trash, and the app quits:\n" + Uninstaller.items(keepMeetings: keepMeetings).map { "• \($0.label)" }.joined(separator: "\n"))
+        }
         .onAppear {
             store.refresh()
             micPermission = MicCapture.permission

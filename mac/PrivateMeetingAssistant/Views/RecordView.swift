@@ -23,7 +23,11 @@ struct RecordView: View {
             header
                 .padding()
             Divider()
-            TranscriptView(recorder: recorder)
+            if showsCentreButton {
+                centre
+            } else {
+                TranscriptView(recorder: recorder)
+            }
         }
         .navigationTitle("Record")
         .toolbar {
@@ -46,7 +50,7 @@ struct RecordView: View {
                 .frame(maxWidth: 480)
                 .disabled(recorder.phase != .idle)
             HStack(spacing: 16) {
-                recordButton
+                if !showsCentreButton { recordButton }
                 if let startedAt = recorder.startedAt {
                     TimelineView(.periodic(from: startedAt, by: 1)) { context in
                         Text(Duration.seconds(context.date.timeIntervalSince(startedAt)).formatted(.time(pattern: .hourMinuteSecond)))
@@ -96,15 +100,7 @@ struct RecordView: View {
     @ViewBuilder private var recordButton: some View {
         switch recorder.phase {
         case .idle:
-            Button {
-                let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                Task {
-                    await recorder.start(
-                        title: name.isEmpty ? Self.defaultTitle() : name, model: model,
-                        language: language == "auto" ? nil : language, removeEcho: removeEcho
-                    )
-                }
-            } label: {
+            Button(action: startRecording) {
                 Label("Record", systemImage: "record.circle")
             }
             .buttonStyle(.borderedProminent)
@@ -127,6 +123,42 @@ struct RecordView: View {
         case .finishing:
             ProgressView().controlSize(.small)
             Text("Finishing the transcript…").foregroundStyle(.secondary)
+        }
+    }
+
+    /// Nothing transcribed yet: the big record button sits in the middle of the page.
+    private var showsCentreButton: Bool {
+        recorder.lines.isEmpty && (recorder.phase == .idle || recorder.phase == .loadingModel)
+    }
+
+    private var centre: some View {
+        let loading = recorder.phase == .loadingModel
+        return VStack(spacing: 22) {
+            BigRecordButton(isLoading: loading, action: startRecording)
+                .disabled(!store.downloaded.contains(model.id))
+            VStack(spacing: 6) {
+                Text(loading ? "Loading \(model.name)…" : "Ready to record")
+                    .font(.title2.bold())
+                Text(loading
+                    ? "Getting the speech model ready. The first time can take a minute or two."
+                    : "What you say appears as “Me”, and the other participants as “Them”. Everything stays on this Mac.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.default, value: loading)
+    }
+
+    private func startRecording() {
+        guard recorder.phase == .idle else { return }
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            await recorder.start(
+                title: name.isEmpty ? Self.defaultTitle() : name, model: model,
+                language: language == "auto" ? nil : language, removeEcho: removeEcho
+            )
         }
     }
 
@@ -295,6 +327,56 @@ struct ModelDownloadRow: View {
             if let error = store.error {
                 Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
             }
+        }
+    }
+}
+
+/// The large round record button. While the speech model loads it pulses, with a spinning arc
+/// around it, and can't be pressed again.
+private struct BigRecordButton: View {
+    let isLoading: Bool
+    let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var spin = false
+    @State private var pulse = false
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(.red.gradient)
+                    .frame(width: 104, height: 104)
+                    .scaleEffect(isLoading ? (pulse ? 0.9 : 1) : (hovering ? 1.05 : 1))
+                    .shadow(color: .red.opacity(isLoading ? 0.5 : 0.3), radius: isLoading ? 20 : 10)
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 40, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .symbolEffect(.pulse, isActive: isLoading)
+                if isLoading {
+                    Circle()
+                        .trim(from: 0, to: 0.3)
+                        .stroke(.red, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .frame(width: 128, height: 128)
+                        .rotationEffect(.degrees(spin ? 360 : 0))
+                }
+            }
+            .frame(width: 136, height: 136)
+            .contentShape(Circle())
+            .opacity(isEnabled ? 1 : 0.4)
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoading)
+        .keyboardShortcut("r", modifiers: .command)
+        .help(isLoading ? "Loading the speech model" : "Start recording (⌘R)")
+        .accessibilityLabel(isLoading ? "Loading the speech model" : "Start recording")
+        .onHover { over in withAnimation(.easeOut(duration: 0.15)) { hovering = over } }
+        .onChange(of: isLoading, initial: true) { _, loading in
+            spin = false
+            pulse = false
+            guard loading else { return }
+            withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) { spin = true }
+            withAnimation(.easeInOut(duration: 0.7).repeatForever()) { pulse = true }
         }
     }
 }

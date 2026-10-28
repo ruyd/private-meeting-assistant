@@ -19,6 +19,10 @@ Known gaps and ideas for the Swift app, roughly in priority order. Remove items 
 
 - **One live run lost the first 15 s of "Them".** Recording started mid-sentence and the first utterance (cut at the 15 s maximum) produced no lines, with no error logged. It didn't reproduce in later runs or offline. (Lost *final* lines had a separate cause, fixed: stopping didn't wait for the last lines to reach the transcript.) Set `PMA_TRACE_SEGMENTS=1` to print Whisper's segments and scores if it happens again.
 
+## Data
+
+- **Restore kept meetings after reinstalling.** Uninstall can save a copy of the meetings to Documents › Private Meeting Assistant, but a fresh install starts empty. Add Settings › Data › "Import Meetings…" to open that copy (looking in Documents unprompted would trigger macOS's Documents permission prompt on launch).
+
 ## Speakers
 
 - **Tell remote participants apart.** "Them" is everyone on the call. WhisperKit ships SpeakerKit (diarization), which could split it into Speaker 1, Speaker 2, …
