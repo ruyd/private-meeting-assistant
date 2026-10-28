@@ -9,6 +9,8 @@ struct MeetingView: View {
     @State private var meeting: Meeting?
     @State private var segments: [Segment] = []
     @State private var screenshots: [MeetingScreenshot] = []
+    @State private var speakers: [MeetingSpeaker] = []
+    @State private var showNaming = false
     @State private var title = ""
     @State private var confirmDelete = false
     @State private var error: String?
@@ -25,7 +27,7 @@ struct MeetingView: View {
         .toolbar {
             ToolbarItemGroup {
                 Button("Copy Transcript", systemImage: "doc.on.doc") {
-                    copy(TranscriptExport.plainText(segments.map { ($0.source, $0.startMs, $0.text) }))
+                    copy(TranscriptExport.plainText(segments.map { ($0.speaker, $0.startMs, $0.text) }))
                 }
                 .help("Copy the transcript as text")
                 Button("Show in Finder", systemImage: "folder") { library.showInFinder(route.meetingID) }
@@ -44,6 +46,13 @@ struct MeetingView: View {
             Text("It's removed from your meetings, and its folder (transcript, summary and screenshots) moves to the Trash.")
         }
         .task(id: route) { load() }
+        // Right after a recording with voices, ask who they were.
+        .onChange(of: library.namingRequest?.meetingID, initial: true) { _, id in
+            if id == route.meetingID { showNaming = true }
+        }
+        .sheet(isPresented: $showNaming, onDismiss: load) {
+            SpeakerNamingView(meetingID: route.meetingID) { showNaming = false }
+        }
         // Picks up a summary written in the background, renames and action-item changes.
         .onChange(of: library.meetings) { meeting = library.meetings.first { $0.id == route.meetingID } ?? meeting }
     }
@@ -58,6 +67,30 @@ struct MeetingView: View {
                         .onSubmit { rename() }
                     Text("\(meeting.startedAt.formatted(date: .complete, time: .shortened)) · \(TranscriptExport.timestamp(meeting.durationMs))")
                         .foregroundStyle(.secondary)
+                    if !speakers.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Voices").font(.headline)
+                                Text("· told apart in the recording").foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Name Speakers…") { showNaming = true }
+                                    .help("Listen to each voice and give it a name")
+                            }
+                            FlowLayout(spacing: 8) {
+                                ForEach(speakers) { s in
+                                    Label {
+                                        Text(s.label)
+                                    } icon: {
+                                        Circle().fill(SpeakerStyle.color(.system, participant: s.number)).frame(width: 10, height: 10)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .frame(height: 26)
+                                    .background(Theme.surface, in: .capsule)
+                                    .overlay(Capsule().strokeBorder(Theme.stroke))
+                                }
+                            }
+                        }
+                    }
                     if let details = meeting.details, !details.participants.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 6) {
@@ -81,7 +114,7 @@ struct MeetingView: View {
                         ForEach(segments) { segment in
                             ForEach(screenshots(before: segment)) { ScreenshotRow(shot: $0, leadingInset: 62) }
                             TranscriptRow(
-                                source: segment.source, startMs: segment.startMs, text: segment.text,
+                                segment: segment, speakerWidth: speakerWidth,
                                 isFocused: segment.id == route.focusSegmentID
                             )
                             .id(segment.id)
@@ -104,6 +137,8 @@ struct MeetingView: View {
         .onDisappear { rename() }
     }
 
+    private var speakerWidth: CGFloat { segments.contains { $0.participant != nil } ? 110 : 44 }
+
     /// Screenshots taken after the previous line started and up to this one.
     private func screenshots(before segment: Segment) -> [MeetingScreenshot] {
         guard let index = segments.firstIndex(of: segment) else { return [] }
@@ -117,6 +152,7 @@ struct MeetingView: View {
             meeting = try store.meeting(route.meetingID)
             segments = try store.segments(of: route.meetingID)
             screenshots = meeting.map { MeetingFiles.screenshots(in: $0.folder) } ?? []
+            speakers = try store.speakers(of: route.meetingID)
             title = meeting?.title ?? ""
         } catch {
             self.error = "Couldn't load the meeting: \(error.localizedDescription)"

@@ -26,6 +26,7 @@ private struct NewRecordingView: View {
     @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
     @AppStorage(SettingsKeys.language) private var language = "auto"
     @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
+    @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     @AppStorage(MeetingLibrary.autoSummarizeKey) private var autoSummarize = true
     @State private var title = ""
     /// The calendar or Zoom meeting picked for this recording, with its participants.
@@ -246,6 +247,10 @@ private struct NewRecordingView: View {
                 Toggle("Remove speaker echo", isOn: $removeEcho)
                     .disabled(!session.captureSystemAudio)
                     .help("Keeps the other participants' voices, heard through your speakers, out of “Me”")
+                Toggle("Tell speakers apart", isOn: $identifySpeakers)
+                    .help(session.captureSystemAudio
+                        ? "Label each voice heard through the computer as its own participant instead of one “Them”"
+                        : "Label each voice in the room as its own participant (Participant 1, 2…)")
                 Toggle("Summarize when done", isOn: $autoSummarize)
                     .help("Write a summary with a local model when the recording stops")
             }
@@ -293,7 +298,8 @@ private struct NewRecordingView: View {
         Task {
             await recorder.start(
                 title: name.isEmpty ? RecordView.defaultTitle() : name, model: model,
-                language: language == "auto" ? nil : language, removeEcho: removeEcho, details: details
+                language: language == "auto" ? nil : language, removeEcho: removeEcho, details: details,
+                identifySpeakers: identifySpeakers
             )
         }
     }
@@ -810,7 +816,10 @@ private struct LiveRecordingView: View {
                     ForEach(items) { item in
                         switch item {
                         case .line(let line):
-                            SpeakerRow(source: line.source, startMs: line.startMs, text: line.text)
+                            SpeakerRow(
+                                speaker: line.speaker, source: line.source, participant: line.participant,
+                                startMs: line.startMs, text: line.text
+                            )
                         case .screenshot(let shot):
                             ScreenshotRow(shot: shot, caption: screenshotCaption)
                         }
@@ -829,7 +838,9 @@ private struct LiveRecordingView: View {
                     ContentUnavailableView(
                         "Listening…",
                         systemImage: "waveform",
-                        description: Text("Lines appear a few seconds after they're spoken: you as “Me”, the other participants as “Them”.")
+                        description: Text(recorder.identifiesSpeakers
+                            ? "Lines appear a few seconds after they're spoken, each voice as its own participant."
+                            : "Lines appear a few seconds after they're spoken: you as “Me”, the other participants as “Them”.")
                     )
                 }
             }
@@ -872,7 +883,7 @@ private struct LiveRecordingView: View {
                 ?? "Screenshots only capture the app you're recording; pick one under Sources next time")
 
             Button("Copy Transcript", systemImage: "doc.on.doc") {
-                copy(TranscriptExport.plainText(recorder.lines.map { ($0.source, $0.startMs, $0.text) }))
+                copy(TranscriptExport.plainText(recorder.lines.map { ($0.speaker, $0.startMs, $0.text) }))
             }
             .disabled(recorder.lines.isEmpty)
             .help("Copy the transcript so far as text")
@@ -922,22 +933,41 @@ private extension View {
     }
 }
 
+/// How a speaker looks in transcripts: "Me" in blue, "Them" in orange, and each participant told
+/// apart in a colour of their own, the same one everywhere.
+enum SpeakerStyle {
+    private static let palette: [Color] = [.orange, .pink, .purple, .teal, .indigo, .green, .brown, .cyan, .mint, .red]
+
+    static func color(_ source: AudioSource, participant: Int?) -> Color {
+        if let participant { return palette[(participant - 1) % palette.count] }
+        return source == .mic ? .blue : .orange
+    }
+
+    /// The avatar's text: the participant's number until they're named, else the label's initial.
+    static func initial(_ label: String, participant: Int?) -> String {
+        if let participant, label == "Participant \(participant)" { return "\(participant)" }
+        return String(label.prefix(1)).uppercased()
+    }
+}
+
 /// A transcript line as a conversation: the speaker's initial, name and time, then the text.
 struct SpeakerRow: View {
+    let speaker: String
     let source: AudioSource
+    var participant: Int?
     let startMs: Int
     let text: String
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            Text(source.speaker.prefix(1))
+            Text(SpeakerStyle.initial(speaker, participant: participant))
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: 32, height: 32)
-                .background(source == .mic ? Color.blue : Color.orange, in: .circle)
+                .background(SpeakerStyle.color(source, participant: participant), in: .circle)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(source.speaker).font(.callout.weight(.semibold))
+                    Text(speaker).font(.callout.weight(.semibold))
                     Text(TranscriptExport.timestamp(startMs)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
                 Text(text)
@@ -993,33 +1023,26 @@ struct ScreenshotRow: View {
 
 /// One transcript line: time, speaker and text.
 struct TranscriptRow: View {
-    let source: AudioSource
-    let startMs: Int
-    let text: String
+    let segment: Segment
+    /// Room for the speaker column: wider when the meeting has named or numbered participants, so
+    /// all rows line up.
+    var speakerWidth: CGFloat = 44
     var isFocused = false
-
-    init(line: TranscriptLine) {
-        self.init(source: line.source, startMs: line.startMs, text: line.text)
-    }
-
-    init(source: AudioSource, startMs: Int, text: String, isFocused: Bool = false) {
-        self.source = source
-        self.startMs = startMs
-        self.text = text
-        self.isFocused = isFocused
-    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(TranscriptExport.timestamp(startMs))
+            Text(TranscriptExport.timestamp(segment.startMs))
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 52, alignment: .trailing)
-            Text(source.speaker)
+            Text(segment.speaker)
                 .font(.callout.bold())
-                .foregroundStyle(source == .mic ? .blue : .orange)
-                .frame(width: 44, alignment: .leading)
-            Text(text)
+                .foregroundStyle(SpeakerStyle.color(segment.source, participant: segment.participant))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: speakerWidth, alignment: .leading)
+                .help(segment.speaker)
+            Text(segment.text)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

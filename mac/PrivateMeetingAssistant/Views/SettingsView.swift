@@ -6,6 +6,7 @@ enum SettingsKeys {
     static let speechModel = "speechModel"
     static let language = "language"
     static let removeEcho = "removeEcho"
+    static let identifySpeakers = "identifySpeakers"
 }
 
 /// The Settings window: one tab per area, each setting with a plain-language note on what it does.
@@ -33,7 +34,9 @@ private struct TranscriptionSettings: View {
     @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
     @AppStorage(SettingsKeys.language) private var language = "auto"
     @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
+    @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
     private let store = ModelStore.shared
+    private let voiceprints = VoiceprintStore.shared
 
     private var englishOnly: Bool { SpeechModel.find(modelID)?.englishOnly ?? false }
 
@@ -62,6 +65,16 @@ private struct TranscriptionSettings: View {
                         : "Choose the language your meetings are in, or let the model work it out. Setting it is a little more accurate.")
                 }
                 .disabled(englishOnly)
+
+                Toggle(isOn: $identifySpeakers) {
+                    Text("Tell speakers apart")
+                    Text(voiceprints.isDownloading
+                        ? "Downloading the speaker model (\(VoiceprintModel.megabytes) MB)…"
+                        : voiceprints.error ?? "Each voice gets its own label (Participant 1, 2…) instead of one “Them”; in-person recordings tell everyone in the room apart. You can name them when the recording stops. Uses a small speaker model (\(VoiceprintModel.megabytes) MB) that runs on this Mac.")
+                }
+                .onChange(of: identifySpeakers, initial: true) {
+                    if identifySpeakers { Task { await voiceprints.downloadIfNeeded() } }
+                }
 
                 Toggle(isOn: $removeEcho) {
                     Text("Remove speaker echo")

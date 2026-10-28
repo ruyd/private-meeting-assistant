@@ -17,6 +17,9 @@ final class MeetingLibrary {
     /// Summaries being written right now. While any are, the speech model is unloaded to leave the
     /// summary model the memory (see ContentView).
     private(set) var summariesRunning = 0
+    /// A meeting whose voices should be named now (the meeting page offers it), and whether to
+    /// write its summary once they are.
+    private(set) var namingRequest: (meetingID: Int64, thenSummarize: Bool)?
 
     init(store: MeetingStore? = nil) {
         do {
@@ -82,6 +85,34 @@ final class MeetingLibrary {
             self.error = "Couldn't delete: \(error.localizedDescription)"
         }
         refresh()
+    }
+
+    // MARK: Speakers
+
+    func requestNaming(_ id: Int64, thenSummarize: Bool) {
+        namingRequest = (id, thenSummarize)
+    }
+
+    /// Names the meeting's voices and rewrites its files. Writes the summary if one was waiting
+    /// for names, or rewrites it if it exists and the names changed.
+    func nameSpeakers(_ id: Int64, _ names: [Int: String?]) {
+        guard let store else { return }
+        let request = namingRequest?.meetingID == id ? namingRequest : nil
+        if request != nil { namingRequest = nil }
+        var changed = false
+        do {
+            let before = Dictionary(uniqueKeysWithValues: try store.speakers(of: id).map { ($0.number, $0.name?.nilIfBlank) })
+            changed = names.contains { before[$0.key] != .some($0.value?.nilIfBlank) }
+            if changed { try store.nameSpeakers(id, names) }
+        } catch {
+            self.error = "Couldn't save the names: \(error.localizedDescription)"
+        }
+        writeFiles(id)
+        refresh()
+        let hasSummary = (try? store.meeting(id))?.summary != nil
+        if request?.thenSummarize == true || (changed && hasSummary) {
+            Task { await summarize(id) }
+        }
     }
 
     // MARK: Summaries

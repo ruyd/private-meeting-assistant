@@ -9,9 +9,9 @@ enum TranscriptExport {
             : String(format: "%02d:%02d", s / 60, s % 60)
     }
 
-    /// One line per transcript line, for the clipboard: "[01:05] Them: Hello."
-    static func plainText(_ lines: [(source: AudioSource, startMs: Int, text: String)]) -> String {
-        lines.map { "[\(timestamp($0.startMs))] \($0.source.speaker): \($0.text)" }.joined(separator: "\n")
+    /// One line per transcript line, for the clipboard: "[01:05] Priya: Hello."
+    static func plainText(_ lines: [(speaker: String, startMs: Int, text: String)]) -> String {
+        lines.map { "[\(timestamp($0.startMs))] \($0.speaker): \($0.text)" }.joined(separator: "\n")
     }
 
     /// A file-name-safe version of a meeting title.

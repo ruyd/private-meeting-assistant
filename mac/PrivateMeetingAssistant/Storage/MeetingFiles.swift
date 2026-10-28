@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 
 /// Meetings as plain files people can open, share and back up: one folder per meeting inside the
@@ -9,6 +10,7 @@ enum MeetingFiles {
     static let transcriptFile = "transcript.md"
     static let summaryFile = "summary.md"
     static let screenshotsFolder = "screenshots"
+    static let voicesFolder = "voices"
 
     /// The folder chosen in setup or Settings; nil until chosen.
     static var root: URL? {
@@ -79,10 +81,34 @@ enum MeetingFiles {
                 out += image(shot)
                 shots.removeFirst()
             }
-            out += "**[\(TranscriptExport.timestamp(s.startMs))] \(s.source.speaker):** \(s.text)\n\n"
+            out += "**[\(TranscriptExport.timestamp(s.startMs))] \(s.speaker.isEmpty ? s.source.speaker : s.speaker):** \(s.text)\n\n"
         }
         for shot in shots { out += image(shot) }
         return out
+    }
+
+    // MARK: Voice samples
+
+    /// A short clip of each voice told apart, voices/participant-<n>.wav, to tell who's who when
+    /// naming them. 16 kHz mono.
+    static func voiceClip(_ number: Int, in folder: URL) -> URL {
+        folder.appending(path: voicesFolder, directoryHint: .isDirectory).appending(path: "participant-\(number).wav")
+    }
+
+    static func saveVoiceClip(_ samples: [Float], number: Int, in folder: URL) throws {
+        let url = voiceClip(number, in: folder)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let format = AVAudioFormat(standardFormatWithSampleRate: MonoResampler.sampleRate, channels: 1)!
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)) else { return }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { buffer.floatChannelData![0].update(from: $0.baseAddress!, count: samples.count) }
+        // Written as 16-bit WAV, half the size and playable anywhere.
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: MonoResampler.sampleRate, AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false,
+        ]
+        let file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        try file.write(from: buffer)
     }
 
     // MARK: Screenshots

@@ -303,7 +303,8 @@ private struct SearchHitRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             if let source = hit.source, let start = hit.startMs {
                 Text(TranscriptExport.timestamp(start)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                Text(source.speaker).font(.callout.bold()).foregroundStyle(source == .mic ? .blue : .orange)
+                Text(hit.speaker ?? source.speaker).font(.callout.bold())
+                    .foregroundStyle(SpeakerStyle.color(source, participant: hit.participant))
             } else {
                 Text("Title / summary").font(.caption).foregroundStyle(.secondary)
             }

@@ -11,6 +11,20 @@ struct TranscriptLine: Identifiable, Equatable, Sendable {
     let startMs: Int
     let endMs: Int
     let text: String
+    /// The voice this line was told apart as (Participant 1, 2…), when speakers are identified on
+    /// its source; numbers may change when the recording finishes (see `SpeakerTracker.finished`).
+    var participant: Int? = nil
+
+    /// "Participant 2", or "Me" / "Them" when speakers aren't told apart.
+    var speaker: String { participant.map { "Participant \($0)" } ?? source.speaker }
+}
+
+/// The voices told apart in a recording: their profiles, how numbers given during the recording map
+/// to the final ones, and a sample clip of each (16 kHz), keyed by final number.
+struct SpeakerResult: Sendable {
+    let profiles: [SpeakerTracker.Profile]
+    let renumber: [Int: Int]
+    let clips: [Int: [Float]]
 }
 
 /// Turns captured audio into transcript lines: each source is cut into utterances on the audio
@@ -44,6 +58,15 @@ final class TranscriptionPipeline: Sendable {
     }
 
     private let state: Mutex<State>
+    /// Voices told apart so far, and the audio of each one's sample line (by its time range).
+    private final class Speakers: Sendable {
+        struct State {
+            var tracker = SpeakerTracker()
+            var clips: [ClosedRange<Int>: [Float]] = [:]
+        }
+        let state = Mutex(State())
+    }
+    private let speakers = Speakers()
     private let queued = Counter()
     private let jobs: AsyncStream<Job>.Continuation
     private let worker: Task<Void, Never>
@@ -55,6 +78,8 @@ final class TranscriptionPipeline: Sendable {
         language: String?,
         startHostTime: UInt64,
         removeEcho: Bool = true,
+        voiceprinter: Voiceprinter? = nil,
+        identifySpeakers: Set<AudioSource> = [],
         onLine: @escaping @Sendable (TranscriptLine) -> Void,
         onBacklog: @escaping @Sendable (Int) -> Void
     ) {
@@ -64,17 +89,22 @@ final class TranscriptionPipeline: Sendable {
         let (stream, continuation) = AsyncStream.makeStream(of: Job.self)
         jobs = continuation
         let queued = queued
+        let speakers = speakers
         worker = Task.detached(priority: .userInitiated) {
             for await job in stream {
                 let u = job.utterance
                 do {
                     for line in try await transcriber.transcribe(u.samples, language: language) {
-                        onLine(TranscriptLine(
+                        var out = TranscriptLine(
                             source: job.source,
                             startMs: u.startMs + Int(line.start * 1000),
                             endMs: min(u.startMs + Int(line.end * 1000), u.endMs),
                             text: line.text
-                        ))
+                        )
+                        if let voiceprinter, identifySpeakers.contains(job.source) {
+                            out.participant = Self.identify(out, in: u, line: line, voiceprinter: voiceprinter, speakers: speakers)
+                        }
+                        onLine(out)
                     }
                 } catch {
                     log.error("transcription failed: \(error.localizedDescription, privacy: .public)")
@@ -120,6 +150,49 @@ final class TranscriptionPipeline: Sendable {
         remaining.forEach(enqueue)
         jobs.finish()
         await worker.value
+    }
+
+    /// The final participants once `finish()` returned; nil when no voices were told apart.
+    func speakerResult() -> SpeakerResult? {
+        speakers.state.withLock { speakers in
+            guard !speakers.tracker.profiles.isEmpty else { return nil }
+            let (profiles, renumber) = speakers.tracker.finished()
+            var clips: [Int: [Float]] = [:]
+            for (i, profile) in profiles.enumerated() {
+                clips[i + 1] = speakers.clips[profile.sample]
+            }
+            return SpeakerResult(profiles: profiles, renumber: renumber, clips: clips)
+        }
+    }
+
+    /// Lines shorter than this borrow the voiceprint of their whole utterance; with less than this
+    /// in the utterance too, the line goes to whoever spoke last (voiceprints of shorter clips are
+    /// unreliable).
+    static let minVoiceprintSamples = Int(MonoResampler.sampleRate * 2)
+
+    private static func identify(
+        _ out: TranscriptLine, in u: Segmenter.Utterance, line: Transcriber.Line, voiceprinter: Voiceprinter, speakers: Speakers
+    ) -> Int? {
+        let rate = MonoResampler.sampleRate
+        let from = min(max(Int(Double(line.start) * rate), 0), u.samples.count)
+        let to = min(max(Int(Double(line.end) * rate), from), u.samples.count)
+        let own = u.samples[from..<to]
+        let clip = own.count >= minVoiceprintSamples ? own : u.samples.count >= minVoiceprintSamples ? u.samples[...] : nil
+        let voiceprint = clip.flatMap { voiceprinter.embed($0) }
+        return speakers.state.withLock { speakers in
+            // Only a line long enough on its own can be the sample clip of its voice.
+            let (participant, isSample) = speakers.tracker.assign(
+                voiceprint, source: out.source, startMs: out.startMs, endMs: out.endMs,
+                canBeSample: own.count >= minVoiceprintSamples
+            )
+            if isSample {
+                speakers.clips[out.startMs...out.endMs] = Array(own)
+                // Keep only the clips that are still someone's sample.
+                let kept = Set(speakers.tracker.profiles.map(\.sample))
+                speakers.clips = speakers.clips.filter { kept.contains($0.key) }
+            }
+            return participant
+        }
     }
 
     private func enqueue(_ job: Job) {

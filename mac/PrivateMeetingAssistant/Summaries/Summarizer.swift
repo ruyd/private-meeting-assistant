@@ -12,6 +12,11 @@ struct Summarizer {
     static let contextTokens = 16_384
     static let timeout: TimeInterval = 5 * 60
 
+    /// When voices were told apart: each label is one person, named or numbered.
+    private static let voicesNote = """
+        Each speaker label is one person: a name, "Me" (the person who recorded the meeting), or "Participant N" for a voice that wasn't named. Refer to people by those labels.
+        """
+
     private static let speakerNote = """
         "Me" is the person who recorded the meeting; "Them" is everyone heard through the computer's audio (possibly several people).
         """
@@ -45,7 +50,8 @@ struct Summarizer {
     /// `participants` (from the linked calendar) lets the model name who "Them" might be and give
     /// action items real owners.
     func summarize(_ segments: [Segment], participants: [MeetingParticipant] = []) async throws -> MeetingSummary {
-        let speakerNote = Self.speakerNote + Self.participantsNote(participants)
+        let speakerNote = (segments.contains { $0.participant != nil } ? Self.voicesNote : Self.speakerNote)
+            + Self.participantsNote(participants)
         let transcript = Self.transcriptText(segments)
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Failure.emptyTranscript }
 
@@ -127,7 +133,8 @@ struct Summarizer {
     // MARK: Text
 
     static func transcriptText(_ segments: [Segment]) -> String {
-        segments.map { "[\(TranscriptExport.timestamp($0.startMs))] \($0.source.speaker): \($0.text)" }.joined(separator: "\n")
+        segments.map { "[\(TranscriptExport.timestamp($0.startMs))] \($0.speaker.isEmpty ? $0.source.speaker : $0.speaker): \($0.text)" }
+            .joined(separator: "\n")
     }
 
     /// Splits on line boundaries into chunks of at most about `max` characters.

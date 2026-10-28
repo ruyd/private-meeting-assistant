@@ -20,6 +20,8 @@ final class Recorder {
     /// Screenshots taken during this recording, in order.
     private(set) var screenshots: [MeetingScreenshot] = []
     private(set) var isTakingScreenshot = false
+    /// Whether this recording tells voices apart (Participant 1, 2…) instead of one "Them".
+    private(set) var identifiesSpeakers = false
 
     @ObservationIgnored private var transcriber: Transcriber?
     /// A load under way, shared by `preload` and `start` so the model is never loaded twice.
@@ -44,8 +46,13 @@ final class Recorder {
 
     /// `language` is an ISO code, or nil to detect it. `removeEcho` keeps the other participants'
     /// voices, heard by the mic through the speakers, out of "Me". `details` is the calendar or Zoom
-    /// meeting being recorded, if one was picked.
-    func start(title: String, model: SpeechModel, language: String?, removeEcho: Bool = true, details: MeetingDetails? = nil) async {
+    /// meeting being recorded, if one was picked. `identifySpeakers` tells the voices apart: those
+    /// heard through the computer when recording system audio (the microphone stays "Me"), or
+    /// everyone in the room when recording the microphone only.
+    func start(
+        title: String, model: SpeechModel, language: String?, removeEcho: Bool = true,
+        details: MeetingDetails? = nil, identifySpeakers: Bool = false
+    ) async {
         guard phase == .idle else { return }
         error = nil
         guard let store = library.store else {
@@ -86,11 +93,15 @@ final class Recorder {
         segmentIDs = [:]
         backlog = 0
         self.removeEcho = removeEcho && capture.captureSystemAudio
+        let voiceprinter = identifySpeakers ? Voiceprinter.load() : nil
+        identifiesSpeakers = voiceprinter != nil
         let pipeline = TranscriptionPipeline(
             transcriber: transcriber,
             language: language,
             startHostTime: mach_absolute_time(),
             removeEcho: removeEcho && capture.captureSystemAudio,
+            voiceprinter: voiceprinter,
+            identifySpeakers: capture.captureSystemAudio ? [.system] : [.mic],
             onLine: { [undelivered] line in
                 undelivered.add(1)
                 Task { @MainActor [weak self] in
@@ -151,8 +162,13 @@ final class Recorder {
         if let meetingID {
             save { try $0.endMeeting(meetingID, at: Date()) }
             fileWrite?.cancel()
+            let hasSpeakers = saveSpeakers(pipeline.speakerResult(), meetingID: meetingID)
             library.writeFiles(meetingID)
-            if !lines.isEmpty, UserDefaults.standard.object(forKey: MeetingLibrary.autoSummarizeKey) as? Bool ?? true {
+            let summarize = !lines.isEmpty && UserDefaults.standard.object(forKey: MeetingLibrary.autoSummarizeKey) as? Bool ?? true
+            if hasSpeakers {
+                // Names first, so the summary can use them; naming (or skipping it) starts the summary.
+                library.requestNaming(meetingID, thenSummarize: summarize)
+            } else if summarize {
                 Task { [library] in await library.summarize(meetingID) }
             }
         }
@@ -160,6 +176,30 @@ final class Recorder {
         self.pipeline = nil
         startedAt = nil
         phase = .idle
+    }
+
+    /// Applies the final participant numbers to the lines, and saves the voices and a sample clip
+    /// of each in the meeting's folder. Returns whether any voices were told apart.
+    private func saveSpeakers(_ result: SpeakerResult?, meetingID: Int64) -> Bool {
+        guard let result, let folder = try? library.store?.meeting(meetingID)?.folder else { return false }
+        let final = SpeakerTracker.finalParticipants(
+            lines.map { ($0.id, $0.source, $0.startMs, $0.participant) }, renumber: result.renumber
+        )
+        for i in lines.indices { lines[i].participant = final[lines[i].id] }
+        let speakers = result.profiles.enumerated().map { i, p in
+            MeetingSpeaker(number: i + 1, sampleStartMs: p.sample.lowerBound, sampleEndMs: p.sample.upperBound, speechMs: p.speechMs)
+        }
+        var voiceprints: [Int: [Float]] = [:]
+        for (i, p) in result.profiles.enumerated() { voiceprints[i + 1] = p.voiceprint }
+        var assignments: [Int64: Int] = [:]
+        for line in lines {
+            if let id = segmentIDs[line.id], let participant = line.participant { assignments[id] = participant }
+        }
+        save { try $0.saveSpeakers(meetingID, speakers, voiceprints: voiceprints, lines: assignments) }
+        for (number, clip) in result.clips {
+            try? MeetingFiles.saveVoiceClip(clip, number: number, in: folder)
+        }
+        return !speakers.isEmpty
     }
 
     /// The app being recorded, which screenshots are limited to; nil when recording all system audio or
@@ -204,7 +244,8 @@ final class Recorder {
         if let meetingID {
             save { store in
                 segmentIDs[line.id] = try store.insertSegment(
-                    meetingID: meetingID, source: line.source, startMs: line.startMs, endMs: line.endMs, text: line.text
+                    meetingID: meetingID, source: line.source, startMs: line.startMs, endMs: line.endMs, text: line.text,
+                    participant: line.participant
                 )
             }
             scheduleFileWrite(meetingID)

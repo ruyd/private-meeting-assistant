@@ -28,6 +28,7 @@ struct ContentView: View {
     @AppStorage(SetupView.completedKey) private var setupCompleted = false
     @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
     @State private var showSetup = false
+    @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
 
     var body: some View {
         NavigationSplitView {
@@ -73,5 +74,9 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: SetupView.reopen)) { _ in showSetup = true }
+        // The speaker model is small; fetch it in the background so it's there for the next recording.
+        .task(id: identifySpeakers) {
+            if identifySpeakers { await VoiceprintStore.shared.downloadIfNeeded() }
+        }
     }
 }

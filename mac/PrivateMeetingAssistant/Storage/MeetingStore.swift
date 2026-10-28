@@ -25,6 +25,24 @@ struct Segment: Identifiable, Hashable, Sendable {
     let startMs: Int
     let endMs: Int
     let text: String
+    /// The voice this line was told apart as, if speakers were identified.
+    var participant: Int? = nil
+    /// Who said it: the participant's name, "Participant 2", or "Me" / "Them".
+    var speaker: String = ""
+}
+
+/// A voice told apart in a meeting: "Participant 2" until someone names it.
+struct MeetingSpeaker: Identifiable, Hashable, Sendable {
+    let number: Int
+    var name: String?
+    /// The line kept as a sample of this voice, in meeting milliseconds.
+    let sampleStartMs: Int
+    let sampleEndMs: Int
+    /// Speech heard from this voice.
+    let speechMs: Int
+
+    var id: Int { number }
+    var label: String { name?.nilIfBlank ?? "Participant \(number)" }
 }
 
 struct SearchHit: Identifiable, Hashable, Sendable {
@@ -36,6 +54,9 @@ struct SearchHit: Identifiable, Hashable, Sendable {
     let kind: Kind
     let segmentID: Int64?
     let source: AudioSource?
+    /// For transcript hits: who said it, and their participant number if speakers were identified.
+    var speaker: String? = nil
+    var participant: Int? = nil
     let startMs: Int?
     /// Matched text, with each match between `MeetingStore.highlightStart` and `highlightEnd`.
     let snippet: String
@@ -174,11 +195,11 @@ final class MeetingStore: Sendable {
 
     // MARK: Transcript
 
-    func insertSegment(meetingID: Int64, source: AudioSource, startMs: Int, endMs: Int, text: String) throws -> Int64 {
+    func insertSegment(meetingID: Int64, source: AudioSource, startMs: Int, endMs: Int, text: String, participant: Int? = nil) throws -> Int64 {
         try db.write { db in
             try db.execute(
-                sql: "INSERT INTO segments (meeting_id, speaker, start_ms, end_ms, text) VALUES (?, ?, ?, ?, ?)",
-                arguments: [meetingID, source.speaker, startMs, endMs, text]
+                sql: "INSERT INTO segments (meeting_id, speaker, start_ms, end_ms, text, participant) VALUES (?, ?, ?, ?, ?, ?)",
+                arguments: [meetingID, source.speaker, startMs, endMs, text, participant]
             )
             return db.lastInsertedRowID
         }
@@ -194,12 +215,68 @@ final class MeetingStore: Sendable {
         try db.read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT id, meeting_id, speaker, start_ms, end_ms, text FROM segments WHERE meeting_id = ? ORDER BY start_ms, id",
+                sql: """
+                SELECT s.id, s.meeting_id, s.speaker, s.start_ms, s.end_ms, s.text, s.participant, \(Self.speakerLabel)
+                FROM segments s LEFT JOIN participants p ON p.meeting_id = s.meeting_id AND p.number = s.participant
+                WHERE s.meeting_id = ? ORDER BY s.start_ms, s.id
+                """,
                 arguments: [meetingID]
             ).map { row in
                 Segment(
                     id: row[0], meetingID: row[1], source: row[2] == "Me" ? .mic : .system,
-                    startMs: row[3], endMs: row[4], text: row[5]
+                    startMs: row[3], endMs: row[4], text: row[5], participant: row[6], speaker: row[7]
+                )
+            }
+        }
+    }
+
+    /// SQL for a line's speaker label, given segments `s` joined with participants `p`.
+    private static let speakerLabel = """
+        COALESCE(NULLIF(TRIM(p.name), ''), CASE WHEN s.participant IS NOT NULL THEN 'Participant ' || s.participant END, s.speaker)
+        """
+
+    // MARK: Speakers
+
+    /// Saves the voices told apart in a recording (replacing any saved before) and which of them
+    /// said each line.
+    func saveSpeakers(_ meetingID: Int64, _ speakers: [MeetingSpeaker], voiceprints: [Int: [Float]], lines: [Int64: Int]) throws {
+        try db.write { db in
+            try db.execute(sql: "DELETE FROM participants WHERE meeting_id = ?", arguments: [meetingID])
+            for s in speakers {
+                let voiceprint = voiceprints[s.number].map { v in v.withUnsafeBufferPointer { Data(buffer: $0) } }
+                try db.execute(
+                    sql: """
+                    INSERT INTO participants (meeting_id, number, name, sample_start_ms, sample_end_ms, speech_ms, voiceprint)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [meetingID, s.number, s.name, s.sampleStartMs, s.sampleEndMs, s.speechMs, voiceprint]
+                )
+            }
+            for (segmentID, participant) in lines {
+                try db.execute(sql: "UPDATE segments SET participant = ? WHERE id = ? AND meeting_id = ?", arguments: [participant, segmentID, meetingID])
+            }
+        }
+    }
+
+    func speakers(of meetingID: Int64) throws -> [MeetingSpeaker] {
+        try db.read { db in
+            try Row.fetchAll(
+                db,
+                sql: "SELECT number, name, sample_start_ms, sample_end_ms, speech_ms FROM participants WHERE meeting_id = ? ORDER BY number",
+                arguments: [meetingID]
+            ).map { row in
+                MeetingSpeaker(number: row[0], name: row[1], sampleStartMs: row[2], sampleEndMs: row[3], speechMs: row[4])
+            }
+        }
+    }
+
+    /// Names the voices (nil or blank: back to "Participant N").
+    func nameSpeakers(_ meetingID: Int64, _ names: [Int: String?]) throws {
+        try db.write { db in
+            for (number, name) in names {
+                try db.execute(
+                    sql: "UPDATE participants SET name = ? WHERE meeting_id = ? AND number = ?",
+                    arguments: [name?.nilIfBlank, meetingID, number]
                 )
             }
         }
@@ -229,17 +306,19 @@ final class MeetingStore: Sendable {
                 db,
                 sql: """
                 SELECT m.id, m.title, m.started_at, s.id, s.speaker, s.start_ms,
-                       snippet(segments_fts, 0, ?, ?, '…', 16)
+                       snippet(segments_fts, 0, ?, ?, '…', 16), s.participant, \(Self.speakerLabel)
                 FROM segments_fts
                 JOIN segments s ON s.id = segments_fts.rowid
                 JOIN meetings m ON m.id = s.meeting_id
+                LEFT JOIN participants p ON p.meeting_id = s.meeting_id AND p.number = s.participant
                 WHERE segments_fts MATCH ? ORDER BY rank LIMIT 200
                 """,
                 arguments: [Self.highlightStart, Self.highlightEnd, query]
             ).map { row in
                 SearchHit(
                     meetingID: row[0], meetingTitle: row[1], startedAt: Self.date(row[2]), kind: .transcript,
-                    segmentID: row[3], source: row[4] == "Me" ? .mic : .system, startMs: row[5], snippet: row[6]
+                    segmentID: row[3], source: row[4] == "Me" ? .mic : .system, speaker: row[8], participant: row[7],
+                    startMs: row[5], snippet: row[6]
                 )
             }
             return meetingHits + segmentHits
@@ -285,6 +364,9 @@ final class MeetingStore: Sendable {
 
     /// Changes to databases made by earlier versions.
     private static func migrate(_ db: Database) throws {
+        if try !db.columns(in: "segments").contains(where: { $0.name == "participant" }) {
+            try db.execute(sql: "ALTER TABLE segments ADD COLUMN participant INTEGER")
+        }
         if try !db.columns(in: "meetings").contains(where: { $0.name == "details_json" }) {
             try db.execute(sql: "ALTER TABLE meetings ADD COLUMN details_json TEXT")
         }
@@ -326,9 +408,23 @@ final class MeetingStore: Sendable {
             speaker    TEXT    NOT NULL,
             start_ms   INTEGER NOT NULL,
             end_ms     INTEGER NOT NULL,
-            text       TEXT    NOT NULL
+            text       TEXT    NOT NULL,
+            -- The voice told apart as Participant N, if speakers were identified.
+            participant INTEGER
         );
         CREATE INDEX IF NOT EXISTS segments_meeting ON segments(meeting_id, start_ms);
+
+        -- Voices told apart in a meeting: a name once given, a sample line and the voiceprint.
+        CREATE TABLE IF NOT EXISTS participants (
+            meeting_id      INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+            number          INTEGER NOT NULL,
+            name            TEXT,
+            sample_start_ms INTEGER NOT NULL,
+            sample_end_ms   INTEGER NOT NULL,
+            speech_ms       INTEGER NOT NULL,
+            voiceprint      BLOB,
+            PRIMARY KEY (meeting_id, number)
+        );
 
         -- Transcript text, kept in sync by triggers.
         CREATE VIRTUAL TABLE IF NOT EXISTS segments_fts USING fts5(
