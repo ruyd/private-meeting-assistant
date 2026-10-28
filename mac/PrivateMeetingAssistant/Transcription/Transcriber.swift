@@ -35,7 +35,7 @@ final class Transcriber: @unchecked Sendable {
 
     /// whisper.cpp's memory for one loaded model, freed exactly once: when its transcriber goes away,
     /// or when the process exits. ggml aborts the process at exit if any of its Metal memory is still
-    /// in use, and the app keeps a model loaded until it quits.
+    /// in use, and the app keeps a model loaded until it quits (or quits while one is loading).
     private final class Handle: @unchecked Sendable {
         let context: OpaquePointer
         let state: OpaquePointer
@@ -45,9 +45,14 @@ final class Transcriber: @unchecked Sendable {
 
         /// Loaded models not yet freed, for the exit handler.
         static let live = Mutex<[ObjectIdentifier: Handle]>([:])
-        /// Registered after the first model loads, which is after ggml set up its own cleanup, so it
-        /// runs first (exit handlers run newest first).
-        static let exitHandler: Void = {
+        /// Models being loaded right now. One still loading holds Metal memory too and can't be freed
+        /// mid-load (nor waited for once exit has begun), so quitting waits for it (see `AppDelegate`).
+        static let loading = Mutex(0)
+
+        /// Sets up ggml's devices, which registers ggml's own cleanup at exit, then registers ours,
+        /// so ours runs first (exit handlers run newest first).
+        static let prepared: Void = {
+            _ = ggml_backend_dev_count()
             atexit {
                 for handle in Handle.live.withLock({ Array($0.values) }) {
                     handle.queue.sync {} // let a transcription that's under way finish
@@ -60,7 +65,6 @@ final class Transcriber: @unchecked Sendable {
             self.context = context
             self.state = state
             Self.live.withLock { $0[ObjectIdentifier(self)] = self }
-            _ = Self.exitHandler
         }
 
         func free() {
@@ -71,11 +75,25 @@ final class Transcriber: @unchecked Sendable {
         }
     }
 
+    /// Whether a model is being loaded right now.
+    static var isLoading: Bool { Handle.loading.withLock { $0 } > 0 }
+
+    /// Waits (up to `limit`) until no model is being loaded, e.g. before the app quits.
+    static func waitForLoads(limit: Duration = .seconds(5)) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now + limit
+        while isLoading, clock.now < deadline { try? await Task.sleep(for: .milliseconds(20)) }
+    }
+
     /// Loads a downloaded model onto the GPU.
     static func load(_ model: SpeechModel) async throws -> Transcriber {
         try await Task.detached(priority: .userInitiated) {
             // whisper.cpp and ggml otherwise log every step to stderr.
             whisper_log_set({ _, _, _ in }, nil)
+            _ = Handle.prepared
+            Handle.loading.withLock { $0 += 1 }
+            // Counted until the model is registered for freeing (or failed to load).
+            defer { Handle.loading.withLock { $0 -= 1 } }
             var params = whisper_context_default_params()
             params.use_gpu = true
             params.flash_attn = true
