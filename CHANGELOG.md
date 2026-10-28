@@ -30,3 +30,4 @@ Added by `mac/scripts/release-appstore.sh` and `mac/scripts/release.sh`. Each bu
 
 | Date | Version | Build | Channel | Commit |
 |---|---|---|---|---|
+| 2026-10-28 | 1.0.0 | 202610281803 | App Store | 4427a09 |
