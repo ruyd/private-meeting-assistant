@@ -47,9 +47,11 @@ private struct NewRecordingView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     micRow
                     sources
+                    // The name and button sit a little above the middle of the space left.
                     Spacer(minLength: 16)
                     centre.frame(maxWidth: .infinity)
                     Spacer(minLength: 16)
+                    Spacer(minLength: 0)
                     notices
                 }
                 .padding(.horizontal, 28)
@@ -60,6 +62,12 @@ private struct NewRecordingView: View {
         }
         .navigationTitle("New Recording")
         .task { await refreshSources() }
+        .task {
+            // AppKit gives the first text field the keyboard when the window opens, which puts a
+            // caret in the middle of the name's placeholder; start with nothing focused instead.
+            await Task.yield()
+            NSApp.keyWindow?.makeFirstResponder(nil)
+        }
         .onDisappear { micTest.stop() }
         .sheet(isPresented: $askForFolder) {
             MeetingsFolderSetup { folder in
@@ -105,8 +113,8 @@ private struct NewRecordingView: View {
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 56)
-                .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator))
+                .background(Theme.surface, in: .rect(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.stroke))
                 .contentShape(.rect(cornerRadius: 12))
             }
             .menuStyle(.button)
@@ -125,8 +133,8 @@ private struct NewRecordingView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                     .frame(width: 132, height: 56)
-                    .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator))
+                    .background(Theme.surface, in: .rect(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.stroke))
                     .overlay {
                         if !micTest.isRunning {
                             Text("Test mic")
@@ -386,8 +394,8 @@ private struct OptionChipStyle: ToggleStyle {
                 .foregroundStyle(on ? .primary : .secondary)
                 .padding(.horizontal, 14)
                 .frame(height: 30)
-                .background(on ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: .capsule)
-                .overlay(Capsule().strokeBorder(on ? AnyShapeStyle(.secondary.opacity(0.5)) : AnyShapeStyle(.separator)))
+                .background(on ? AnyShapeStyle(Theme.raised) : AnyShapeStyle(.clear), in: .capsule)
+                .overlay(Capsule().strokeBorder(on ? AnyShapeStyle(.secondary.opacity(0.5)) : AnyShapeStyle(Theme.stroke)))
                 .contentShape(.capsule)
             }
             .buttonStyle(.plain)
@@ -412,7 +420,7 @@ private struct SourceTile: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack {
-                    Rectangle().fill(.quaternary.opacity(0.7))
+                    Rectangle().fill(Theme.raised)
                     if tiled { TiledPreview(seed: name.unicodeScalars.reduce(0) { $0 + Int($1.value) }, inset: 8) }
                     Group {
                         if let icon {
@@ -446,11 +454,11 @@ private struct SourceTile: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(width: 128)
-            .background(.quaternary.opacity(0.4))
+            .background(Theme.surface)
             .clipShape(.rect(cornerRadius: 12))
             .overlay {
                 RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(isSelected ? AnyShapeStyle(.red) : AnyShapeStyle(.separator), lineWidth: isSelected ? 1.5 : 1)
+                    .strokeBorder(isSelected ? AnyShapeStyle(.red) : AnyShapeStyle(Theme.stroke), lineWidth: isSelected ? 1.5 : 1)
             }
             .contentShape(.rect(cornerRadius: 12))
         }
@@ -492,7 +500,7 @@ struct TiledPreview: View {
     var body: some View {
         let k = abs(seed)
         ZStack(alignment: .bottomLeading) {
-            Rectangle().fill(.quaternary.opacity(0.6))
+            Rectangle().fill(Theme.raised)
             Grid(horizontalSpacing: 3, verticalSpacing: 3) {
                 GridRow { tile(k); tile(k + 1) }
                 GridRow { tile(k + 2); tile(k + 3) }
@@ -602,18 +610,21 @@ final class MicTest {
     }
 }
 
-/// The last moments of input level as vertical bars, newest on the right.
+/// The last moments of input level as vertical bars, newest on the right. Idle, a dim resting shape.
 private struct LevelHistory: View {
     let levels: [Float]
     let isActive: Bool
 
+    private static let resting: [Float] = [0.3, 0.5, 0.65, 0.45, 0.75, 0.55, 0.4, 0.6, 0.5, 0.35, 0.45, 0.3, 0.22, 0.15]
+
     var body: some View {
         HStack(alignment: .bottom, spacing: 3) {
-            ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
+            ForEach(Array(levels.enumerated()), id: \.offset) { index, level in
+                let shown = isActive ? level : Self.resting[index % Self.resting.count]
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(isActive ? (level > 0.85 ? Color.orange : Color.green) : Color.secondary.opacity(0.3))
+                    .fill(isActive ? (level > 0.85 ? Color.orange : Color.green) : Color.secondary.opacity(0.25))
                     .frame(maxWidth: .infinity)
-                    .frame(height: max(3, 36 * CGFloat(level)))
+                    .frame(height: max(3, 36 * CGFloat(shown)))
             }
         }
         .frame(maxHeight: .infinity, alignment: .bottom)
@@ -882,7 +893,8 @@ private extension View {
     func chipStyle() -> some View {
         padding(.horizontal, 10)
             .frame(height: 28)
-            .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+            .background(Theme.surface, in: .rect(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.stroke))
     }
 }
 

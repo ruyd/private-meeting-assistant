@@ -33,12 +33,17 @@ struct ContentView: View {
             MeetingsView(recorder: recorder)
                 .navigationSplitViewColumnWidth(min: 320, ideal: 460, max: 680)
         } detail: {
-            switch navigation.selection ?? .recorder {
-            case .recorder:
-                RecordView(recorder: recorder)
-            case .meeting(let route):
-                MeetingView(route: route).id(route)
+            Group {
+                switch navigation.selection ?? .recorder {
+                case .recorder:
+                    RecordView(recorder: recorder)
+                case .meeting(let route):
+                    MeetingView(route: route).id(route)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Under the title bar too, so it matches.
+            .background(Theme.canvas, ignoresSafeAreaEdges: .all)
         }
         .toolbar {
             ToolbarItem {

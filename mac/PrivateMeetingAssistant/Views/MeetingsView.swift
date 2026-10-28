@@ -37,6 +37,8 @@ struct MeetingsView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(Theme.sidebar)
         .overlay {
             if isSearching && hits.isEmpty {
                 ContentUnavailableView.search(text: query)
@@ -103,10 +105,10 @@ struct MeetingsView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 36)
-        .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 9))
+        .background(Theme.surface, in: .rect(cornerRadius: 9))
         .overlay {
             RoundedRectangle(cornerRadius: 9)
-                .strokeBorder(searchFocused ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear), lineWidth: 1.5)
+                .strokeBorder(searchFocused ? AnyShapeStyle(.tint) : AnyShapeStyle(Theme.stroke), lineWidth: searchFocused ? 1.5 : 1)
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
@@ -222,23 +224,23 @@ private struct MeetingCard: View {
             preview
                 .frame(width: 96, height: 60)
                 .clipShape(.rect(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.stroke))
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(meeting.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                     Spacer(minLength: 0)
                     Text(TranscriptExport.timestamp(meeting.durationMs))
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: 10.5, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
                 Text(summaryLine)
-                    .font(.system(size: 12))
+                    .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .lineSpacing(1)
                 Text(whenLine)
-                    .font(.system(size: 11))
+                    .font(.system(size: 10.5))
                     .foregroundStyle(.tertiary)
             }
         }
@@ -258,7 +260,7 @@ private struct MeetingCard: View {
                 .aspectRatio(contentMode: .fill)
         } else if SampleMeetings.isVoiceOnly(meeting.id) {
             ZStack {
-                Rectangle().fill(.quaternary.opacity(0.6))
+                Rectangle().fill(Theme.raised)
                 Image(systemName: "mic").font(.system(size: 18)).foregroundStyle(.secondary)
             }
         } else {

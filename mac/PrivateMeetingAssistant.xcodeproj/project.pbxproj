@@ -34,6 +34,7 @@
 		834AA88A6E8830DD2D66165F /* CaptureSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37371385834E310668676DB /* CaptureSelfTest.swift */; };
 		886B5F9FF5201E6135ECB4F1 /* MeetingLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 845A56C9EDB85DA0127291E5 /* MeetingLibrary.swift */; };
 		8AAC7B811EF3547CEF0FB666 /* InputDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDFF6A4602820A461C9F0988 /* InputDiagnostics.swift */; };
+		8FBC5CD16AB7CBE3B6AF76BB /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D907180FFAD48F316DDE82 /* Theme.swift */; };
 		95F2B03B6FFC8FB8D7461F8E /* ModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9CC8679F104C1E6DB490C3F /* ModelStore.swift */; };
 		96F6FA085CB7D817977ED06E /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = B8191DCF2ED59DBB98B72E2D /* WhisperKit */; };
 		B4600D463E8CB3BC76215BDB /* TranscriptExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106D5E5E45956E12C81EF8E6 /* TranscriptExport.swift */; };
@@ -98,6 +99,7 @@
 		B9CC8679F104C1E6DB490C3F /* ModelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelStore.swift; sourceTree = "<group>"; };
 		C03C7B862C67EFD1052E415A /* MeetingFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingFiles.swift; sourceTree = "<group>"; };
 		C2F4C682D2D46C1B89E6B9AF /* TranscriptionPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipeline.swift; sourceTree = "<group>"; };
+		C5D907180FFAD48F316DDE82 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		C65725B6204BCE905255BCD4 /* SampleMeetings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleMeetings.swift; sourceTree = "<group>"; };
 		C737C633D7214F5C3FD72374 /* Uninstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Uninstaller.swift; sourceTree = "<group>"; };
 		C8EE0CA096F2385353365A94 /* PrivateMeetingAssistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PrivateMeetingAssistant.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -259,6 +261,7 @@
 				839B89B085C08F415BD22DC7 /* RecordView.swift */,
 				07EF1B4E69AC84B69396F6E9 /* SettingsView.swift */,
 				AB9BC6FFB310A06BB9833D05 /* SetupView.swift */,
+				C5D907180FFAD48F316DDE82 /* Theme.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -436,6 +439,7 @@
 				311E17BAEF1BD6290260A72B /* Summarizer.swift in Sources */,
 				10EE9BB2C5BD13AEC701C8F2 /* SummaryEngine.swift in Sources */,
 				6952C58AAEBAA9468045FFBC /* SystemAudioCapture.swift in Sources */,
+				8FBC5CD16AB7CBE3B6AF76BB /* Theme.swift in Sources */,
 				07D757D33C7CB28AD0521C3E /* Transcriber.swift in Sources */,
 				B4600D463E8CB3BC76215BDB /* TranscriptExport.swift in Sources */,
 				5CC17E557B0F4655FBC013F0 /* TranscriptionPipeline.swift in Sources */,
