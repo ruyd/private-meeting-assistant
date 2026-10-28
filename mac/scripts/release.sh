@@ -5,7 +5,10 @@
 #   xcrun notarytool store-credentials pma-notary \
 #     --key /path/to/AuthKey_XXXX.p8 --key-id XXXX --issuer <issuer-uuid>
 #
-# SKIP_NOTARIZE=1 builds and signs the DMG without notarizing (local testing only).
+# SKIP_NOTARIZE=1 builds and signs the DMG without notarizing (local testing only; nothing is recorded).
+#
+# Before building it checks the version is described in CHANGELOG.md and everything is committed
+# (scripts/release-common.sh); after notarizing it adds the build to CHANGELOG.md and tags the commit.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -14,6 +17,8 @@ PROFILE="${NOTARY_PROFILE:-pma-notary}"
 IDENTITY="Developer ID Application"
 APP_NAME="Private Meeting Assistant"
 OUT=build/release
+source scripts/release-common.sh
+release_checks
 
 notarize() {
   local file=$1 result id status
@@ -33,7 +38,7 @@ mkdir -p "$OUT"
 
 xcodegen generate --quiet
 xcodebuild -project PrivateMeetingAssistant.xcodeproj -scheme PrivateMeetingAssistant \
-  -configuration Release -archivePath "$OUT/app.xcarchive" archive -quiet
+  -configuration Release -archivePath "$OUT/app.xcarchive" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive -quiet
 xcodebuild -exportArchive -archivePath "$OUT/app.xcarchive" \
   -exportOptionsPlist ExportOptions.plist -exportPath "$OUT" -quiet
 
@@ -63,3 +68,4 @@ if [[ "${SKIP_NOTARIZE:-0}" != 1 ]]; then
 fi
 
 echo "Built $DMG ($(du -h "$DMG" | cut -f1))"
+[[ "${SKIP_NOTARIZE:-0}" == 1 ]] || release_record "Developer ID" devid

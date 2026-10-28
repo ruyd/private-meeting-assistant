@@ -32,13 +32,18 @@ Everything else was checked in the sandboxed build: microphone and system-audio 
 
 ## Each release
 
-Create an App Store Connect API key with the App Manager role (Users and Access › Integrations), then:
+1. Describe the version in `CHANGELOG.md`: move what's under **Unreleased** into a `## X.Y.Z — date` section, set `MARKETING_VERSION` in `project.yml` to match, and commit. The script refuses to build without that section or with uncommitted changes (`ALLOW_DIRTY=1` for local tries only).
+2. Upload with an App Store Connect API key (App Manager role, from Users and Access › Integrations):
 
 ```bash
 ASC_KEY_PATH=~/keys/AuthKey_XXXX.p8 ASC_KEY_ID=XXXX ASC_ISSUER_ID=<issuer-uuid> mac/scripts/release-appstore.sh
 ```
 
-It archives the `AppStore` configuration with a new build number (the time, or `BUILD_NUMBER`), signs it for the App Store (Xcode creates the Apple Distribution certificate and profile the first time), and uploads it. After processing it shows up in TestFlight; test it there, then add it to the version and submit for review. Bump `MARKETING_VERSION` in `project.yml` for each new version.
+It archives the `AppStore` configuration with a new build number (the time, or `BUILD_NUMBER`; always newer than the last published one), signs it for the App Store (Xcode creates the Apple Distribution certificate and profile the first time), and uploads it. Then it adds the build to **Published builds** in `CHANGELOG.md` and tags the commit `appstore/<version>-<build>`.
+3. Commit `CHANGELOG.md` and push the tag (the script prints the command).
+4. After processing the build shows up in TestFlight; test it there, then add it to the version and submit for review.
+
+`scripts/release.sh` (the notarized DMG) does the same checks and records its builds as `devid/<version>-<build>`.
 
 `EXPORT_ONLY=1` writes the signed `.pkg` to `mac/build/appstore/` instead of uploading.
 

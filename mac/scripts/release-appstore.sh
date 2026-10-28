@@ -8,15 +8,19 @@
 #
 # Xcode creates or updates the Apple Distribution certificate and App Store provisioning profile it
 # needs (-allowProvisioningUpdates). Each upload needs a new build number: BUILD_NUMBER, or the time.
-# EXPORT_ONLY=1 writes the signed .pkg to build/appstore/ instead of uploading.
+# EXPORT_ONLY=1 writes the signed .pkg to build/appstore/ instead of uploading (nothing is recorded).
+#
+# Before building it checks the version is described in CHANGELOG.md and everything is committed
+# (scripts/release-common.sh); after uploading it adds the build to CHANGELOG.md and tags the commit.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+source scripts/release-common.sh
+release_checks
 : "${ASC_KEY_PATH:?set ASC_KEY_PATH to the App Store Connect API key (.p8)}"
 : "${ASC_KEY_ID:?set ASC_KEY_ID}"
 : "${ASC_ISSUER_ID:?set ASC_ISSUER_ID}"
-BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 OUT=build/appstore
 AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 
@@ -41,5 +45,6 @@ xcodebuild -exportArchive -archivePath "$OUT/PrivateMeetingAssistant.xcarchive" 
 if [[ -n "${EXPORT_ONLY:-}" ]]; then
   echo "Done: build $BUILD_NUMBER. The .pkg is in $OUT."
 else
-  echo "Done: build $BUILD_NUMBER. It appears in App Store Connect (TestFlight) after processing, usually within 30 minutes."
+  echo "Done: $VERSION ($BUILD_NUMBER). It appears in App Store Connect (TestFlight) after processing, usually within 30 minutes."
+  release_record "App Store" appstore
 fi
