@@ -10,12 +10,13 @@ Known gaps and ideas for the Swift app, roughly in priority order. Remove items 
 
 ## Echo
 
-- **Per-band residual echo suppression for double talk.** SpeexDSP's echo canceller now subtracts the far end (10–13 dB on loud laptop or monitor speakers, which distort in ways a linear filter can't model), and the gate removes what's left: no echo leaked into "Me" in replay or live tests. But when you talk over the far end at about the echo's loudness, the gate still drops much of your voice, because it judges whole 30 ms frames. SpeexDSP's preprocessor suppresses residual echo per frequency band, keeping your voice in the bands where it dominates; adding it (`preprocess.c`, `filterbank.c`) and judging the gate per band is the next step. Measure with the replay test (`EchoReplayTests`, voice injected with `ECHO_REPLAY_NEAR_DB`).
+- **Talking over the far end at the echo's loudness.** The default chain (canceller, per-band suppression, gate) leaks no echo into "Me" in replay or live tests, and keeps your words over the far end when you're clearly louder than the echo. When you're about as loud as the echo or quieter, the gate drops them. Gating only while the chain learns (`Stages.gateOnlyWhileLearning`) keeps them word for word, even 9 dB below the echo, but then faint leftover audio becomes stray "Me" words ("Thank you.", "Amen.") about twice per 25 s live. Options: a Whisper hallucination filter good enough to allow that mode, or a setting to choose between the two.
+- **Recovery after loud double talk.** The canceller is knocked off course by loud double talk and leaks for a few seconds after, mostly caught by the transcript-level echo filter (`EchoText`). SpeexDSP doesn't expose a way to freeze its adaptation while you talk.
 - **Learning latency.** The gate needs about a second of the far end talking before it works, and the canceller a few seconds more to converge. Mic audio is held meanwhile so nothing leaks, which delays the session's first lines by about a second.
 
 ## Reliability
 
-- **One live run lost the first 15 s of "Them".** Recording started mid-sentence and the first utterance (cut at the 15 s maximum) produced no lines, with no error logged. It didn't reproduce in three more runs or offline. Set `PMA_TRACE_SEGMENTS=1` to print Whisper's segments and scores if it happens again.
+- **One live run lost the first 15 s of "Them".** Recording started mid-sentence and the first utterance (cut at the 15 s maximum) produced no lines, with no error logged. It didn't reproduce in later runs or offline. (Lost *final* lines had a separate cause, fixed: stopping didn't wait for the last lines to reach the transcript.) Set `PMA_TRACE_SEGMENTS=1` to print Whisper's segments and scores if it happens again.
 
 ## Speakers
 

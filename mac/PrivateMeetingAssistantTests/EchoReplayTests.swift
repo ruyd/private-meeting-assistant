@@ -20,9 +20,9 @@ struct EchoReplayTests {
         return Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)))
     }
 
-    private func gated(mic: [Float], far: [Float], cancel: Bool) -> [Float] {
-        var gate = EchoGate(cancelEcho: cancel)
-        if cancel, ProcessInfo.processInfo.environment["ECHO_REPLAY_TRACE"] != nil {
+    private func gated(mic: [Float], far: [Float], stages: EchoGate.Stages) -> [Float] {
+        var gate = EchoGate(stages: stages)
+        if stages.cancel, ProcessInfo.processInfo.environment["ECHO_REPLAY_TRACE"] != nil {
             gate.trace = { f, p, t, echo in
                 guard (267...300).contains(f) else { return }
                 func db(_ x: Float) -> String { String(format: "%4.0f", 10 * log10(max(x, 1e-12))) }
@@ -96,17 +96,23 @@ struct EchoReplayTests {
         if let model = SpeechModel.catalog.first(where: ModelStore.isComplete) {
             transcriber = try await Transcriber.load(model)
         }
-        for cancel in [false, true] {
-            let out = gated(mic: mic, far: far, cancel: cancel)
-            print("replay [\(cancel ? "canceller + gate" : "gate only")]")
-            if cancel {
-                // Echo removed by the canceller alone, after a few seconds to converge.
-                let n = mic.count / EchoCanceller.frameSize * EchoCanceller.frameSize
-                let residual = EchoCanceller().cancel(mic: mic[0..<n], farEnd: far[0..<n])
-                func db(_ x: ArraySlice<Float>) -> Float { 10 * log10(max(x.reduce(0) { $0 + $1 * $1 } / Float(x.count), 1e-12)) }
-                let r = (5 * Self.rate)..<min(8 * Self.rate, n)
-                print(String(format: "replay:   canceller alone removes %.1f dB of echo (5–8 s)", db(mic[r]) - db(residual[r])))
+        var configurations: [(String, EchoGate.Stages)] = [
+            ("gate only", .init(cancel: false, suppressResidual: false, gate: true)),
+            ("canceller + gate", .init(cancel: true, suppressResidual: false, gate: true, gateOnlyWhileLearning: false)),
+            ("canceller + band suppression, gate only while learning", .init(gateOnlyWhileLearning: true)),
+            ("canceller + band suppression + gate, margin 8 — default", .init()),
+        ]
+        // ECHO_REPLAY_SWEEP=1: band suppression without the gate at several strengths instead.
+        if env["ECHO_REPLAY_SWEEP"] != nil {
+            configurations = [(-40, -15), (-60, -25), (-60, -40), (-80, -40), (-80, -60)].map { quiet, talking in
+                ("suppress \(quiet)/\(talking) dB", .init(cancel: true, suppressResidual: true, gate: false, gateOnlyWhileLearning: false,
+                                                       echoSuppression: Int32(quiet), echoSuppressionWhileTalking: Int32(talking)))
             }
+        }
+        var themLines: [TranscriptLine]?
+        for (name, stages) in configurations {
+            let out = gated(mic: mic, far: far, stages: stages)
+            print("replay [\(name)]")
             if near.contains(where: { $0 != 0 }) {
                 let r = (8 * Self.rate)..<min(12 * Self.rate, mic.count)
                 let dot = r.reduce(Float(0)) { $0 + out[$1] * near[$1] }
@@ -114,14 +120,29 @@ struct EchoReplayTests {
                 print(String(format: "replay:   your voice kept: %.0f%%", 100 * dot / max(energy, 1e-12)))
             }
             guard let transcriber else { continue }
-            var segmenter = Segmenter()
-            var utterances = segmenter.push(out)
-            if let last = segmenter.flush() { utterances.append(last) }
-            for u in utterances {
-                let text = try await transcriber.transcribe(u.samples, language: "en").map(\.text).joined(separator: " ")
-                if !text.isEmpty {
-                    print(String(format: "replay:   Me %5.2fs: %@", Double(u.startMs) / 1000, text))
+            // Transcribe both sides as the app does, then apply the transcript-level echo filter.
+            func lines(_ samples: [Float], _ source: AudioSource) async throws -> [TranscriptLine] {
+                var segmenter = Segmenter()
+                var utterances = segmenter.push(samples)
+                if let last = segmenter.flush() { utterances.append(last) }
+                var result: [TranscriptLine] = []
+                for u in utterances {
+                    // Loudness of the utterance's louder frames (90th percentile), in dBFS.
+                    let frames = stride(from: 0, to: u.samples.count - 480, by: 480).map { o in
+                        u.samples[o..<(o + 480)].reduce(Float(0)) { $0 + $1 * $1 } / 480
+                    }.sorted()
+                    let level = frames.isEmpty ? -120 : 10 * log10(max(frames[frames.count * 9 / 10], 1e-12))
+                    for l in try await transcriber.transcribe(u.samples, language: "en") {
+                        result.append(TranscriptLine(source: source, startMs: u.startMs + Int(l.start * 1000), endMs: u.startMs + Int(l.end * 1000),
+                                                     text: source == .mic ? String(format: "[%.0f dBFS] ", level) + l.text : l.text))
+                    }
                 }
+                return result
+            }
+            if themLines == nil { themLines = try await lines(far, .system) }
+            for line in try await lines(out, .mic) {
+                let dropped = EchoText.isEcho(line, of: themLines ?? [])
+                print(String(format: "replay:   Me %5.2fs%@: %@", Double(line.startMs) / 1000, dropped ? " (dropped as echo text)" : "", line.text))
             }
         }
     }

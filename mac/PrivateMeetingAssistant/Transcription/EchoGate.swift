@@ -3,18 +3,21 @@ import Foundation
 /// Keeps the other participants' voices, played through the speakers and picked up by the mic, out of
 /// the "Me" transcript.
 ///
-/// The far end is known exactly: it's the system audio tap, on the same clock as the mic. First an
-/// adaptive echo canceller (SpeexDSP's MDF) subtracts the far end from the mic, which removes most of
-/// the echo and leaves your voice far louder than what remains. Then the gate handles the rest. It
-/// learns two things while the far end talks: the echo delay (speaker, room and device latency, found
-/// by correlating the loudness of the mic with the far end's) and the echo level (how loud the mic is
-/// relative to the far end at that delay, after cancellation). For every 30 ms mic frame it then predicts how loud the
-/// echo is; frames no louder than that are attenuated before voice detection, so they never become
-/// "Me" utterances. When you talk, the mic is clearly louder than the predicted echo and passes
-/// through untouched, including when you talk over the other side.
+/// The far end is known exactly: it's the system audio tap, on the same clock as the mic. Three stages:
 ///
-/// Apple's voice processing can't be used instead: it only cancels audio played through its own
-/// output, and enabling it silenced both the mic and the process tap in testing.
+/// 1. An adaptive echo canceller (SpeexDSP's MDF) subtracts the far end from the mic: 10–13 dB on loud
+///    laptop or monitor speakers, which distort in ways a linear filter can't model.
+/// 2. SpeexDSP's preprocessor turns the leftover echo down per frequency band, keeping your voice in
+///    the bands where it dominates. This is what keeps your words when you talk over the far end.
+/// 3. This gate drops whole 30 ms frames that are only echo, which band suppression alone lets through
+///    as faint audio that Whisper turns into stray words ("Thank you."). It learns the echo delay (by
+///    correlating the mic's loudness with the far end's) and the echo level after cancellation, and
+///    judges the canceller's output, which is steadier than the band-suppressed audio it passes on.
+///
+/// The gate can't tell your voice from echo of the same loudness, so speech you make over the far end
+/// at the echo's level can still be lost; `Stages.gateOnlyWhileLearning` keeps it but lets stray words
+/// through. Apple's voice processing can't be used instead: it only cancels audio played through its
+/// own output, and enabling it silenced both the mic and the process tap in testing.
 struct EchoGate {
     struct Output: Equatable {
         /// Absolute sample index of the first sample.
@@ -42,10 +45,6 @@ struct EchoGate {
     private static let minDelayEvidence = 20
     /// A delay is trusted only if the loudness envelopes correlate at least this well.
     private static let minCorrelation: Float = 0.5
-    /// Your voice must be 9 dB above the typical (median) echo to count as you talking: real speakers
-    /// and rooms don't echo every sound equally, and a median stays put when a few unusual frames
-    /// arrive, where a high percentile drifts.
-    private static let nearEndMargin: Float = 8
     /// Once you're talking, keep passing audio for 300 ms so pauses inside a phrase aren't cut out.
     private static let nearEndHangover = 5
     /// Stop learning the echo level while you talk and for a second after: the quiet moments between
@@ -63,13 +62,33 @@ struct EchoGate {
     private static let maxRatios = 200
     private static let minRatios = 15
 
-    private let cancelEcho: Bool
+    /// Which stages run: subtract the far end, suppress its leftover per band, gate whole frames.
+    struct Stages: Equatable {
+        var cancel = true
+        var suppressResidual = true
+        var gate = true
+        /// Gate only until the canceller and band suppression have had time to converge (about 5 s from
+        /// when the far end starts talking), then let band suppression handle the echo alone. Whole-frame gating can't
+        /// tell your voice from echo of the same loudness; per-band suppression can.
+        var gateOnlyWhileLearning = false
+        /// How far (power ratio) your voice must be above the typical leftover echo to pass the gate.
+        var nearEndMargin: Float = 8
+        /// Residual echo suppression strength (dB) while only the far end talks, and while you talk too.
+        var echoSuppression: Int32 = -80
+        var echoSuppressionWhileTalking: Int32 = -40
+    }
+
+    private let stages: Stages
+    private var cancelEcho: Bool { stages.cancel }
     /// Created once the delay is known: the far end is fed `cancellerDelay` frames late (a little less
     /// than the measured delay) and scaled to the echo's level, so a short filter that converges in
     /// a few seconds only has to model the room. Rebuilt if the delay moves by two frames or more.
     private var canceller: EchoCanceller?
     private var cancellerDelay = 0
     private var cancellerGain: Float = 1
+    /// Frames the current canceller has processed; it needs a few seconds to converge.
+    private var cancellerAge = 0
+    private static let cancellerSettledFrames = 133
     /// Far-end samples from absolute index `farBase`, for the canceller (gaps filled with silence).
     private var farSamples: [Float] = []
     private var farBase = 0
@@ -97,9 +116,8 @@ struct EchoGate {
         rawEcho: Float(0), cancelledEcho: Float(0), cancellerGain: Float(0)
     )
 
-    /// `cancelEcho` subtracts the far end before gating; off, only the gate runs (for comparison).
-    init(cancelEcho: Bool = true) {
-        self.cancelEcho = cancelEcho
+    init(stages: Stages = Stages()) {
+        self.stages = stages
     }
 
     /// Typical (median) mic power relative to far-end power at the echo delay; nil until learned.
@@ -191,10 +209,13 @@ struct EchoGate {
         guard let start = micStart else { return nil }
         let count = frames * Self.frame
         var out = Array(mic[0..<count])
+        // The gate judges the canceller's output; what it passes is the band-suppressed version,
+        // whose loudness jumps around too much to judge but which keeps the echo under your voice down.
+        var judged = out
         if let canceller = prepareCanceller() {
             let lag = cancellerDelay * Self.frame
             let far = farEndSamples(from: start - lag, count: count).map { $0 * cancellerGain }
-            out = canceller.cancel(mic: out[...], farEnd: far[...])
+            (judged, out) = canceller.process(mic: out[...], farEnd: far[...])
         }
         // Keep only the far end the canceller can still need.
         let drop = min(start + count - (Self.maxDelayFrames + 2) * Self.frame - farBase, farSamples.count)
@@ -205,7 +226,7 @@ struct EchoGate {
         // With the canceller, the gate judges what's left of the echo, not the raw mic.
         for offset in stride(from: 0, to: count, by: Self.frame) {
             var power: Float = 0
-            for s in out[offset..<(offset + Self.frame)] { power += s * s }
+            for s in judged[offset..<(offset + Self.frame)] { power += s * s }
             judgedPower[(start + offset) / Self.frame] = power / Float(Self.frame)
         }
         for offset in stride(from: 0, to: count, by: Self.frame) {
@@ -217,10 +238,12 @@ struct EchoGate {
             }
             let echo = isEcho(power: judgedPower[index] ?? 0, frame: index)
             if let trace {
-                let threshold = delay.flatMap { d in echoLevel.map { Self.nearEndMargin * $0 * echoPeak(into: index, delay: d) } }
+                let threshold = delay.flatMap { d in echoLevel.map { stages.nearEndMargin * $0 * echoPeak(into: index, delay: d) } }
                 trace(index, judgedPower[index] ?? 0, threshold, echo)
             }
-            if echo {
+            if canceller != nil { cancellerAge += 1 }
+            let suppressing = stages.suppressResidual && cancellerAge >= Self.cancellerSettledFrames
+            if echo && stages.gate && !(stages.gateOnlyWhileLearning && suppressing) {
                 for i in offset..<(offset + Self.frame) { out[i] *= Self.attenuation }
             }
         }
@@ -258,7 +281,7 @@ struct EchoGate {
         // loudness is known because frames are held before release.)
         func louderThanEcho(_ f: Int) -> Bool {
             guard let p = judgedPower[f] else { return false }
-            return p > Self.nearEndMargin * echoLevel * echoPeak(into: f, delay: delay)
+            return p > stages.nearEndMargin * echoLevel * echoPeak(into: f, delay: delay)
         }
         if louderThanEcho(index) && (louderThanEcho(index - 1) || louderThanEcho(index + 1)) {
             hangover = Self.nearEndHangover
@@ -268,7 +291,7 @@ struct EchoGate {
         guard hangover == 0 else { return false }
         // Learn only from clear echo, well under the bar: frames of your voice that land just under it
         // would otherwise raise it, gating more of your voice, which would raise it further.
-        if learningPaused == 0, power < Self.nearEndMargin / 2 * echoLevel * farEndPeak { learn() }
+        if learningPaused == 0, power < stages.nearEndMargin / 2 * echoLevel * farEndPeak { learn() }
         stats.gated += 1
         return true
     }
@@ -288,7 +311,11 @@ struct EchoGate {
                 return m / far
             }.sorted()
             cancellerGain = ratios.isEmpty ? 1 : min(max(ratios[ratios.count / 2].squareRoot(), 0.125), 16)
-            canceller = EchoCanceller(filterLength: Self.cancellerTaps)
+            cancellerAge = 0
+            canceller = EchoCanceller(
+                filterLength: Self.cancellerTaps, suppressResidual: stages.suppressResidual,
+                echoSuppression: stages.echoSuppression, echoSuppressionWhileTalking: stages.echoSuppressionWhileTalking
+            )
         }
         return canceller
     }
