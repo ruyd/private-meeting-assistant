@@ -2,12 +2,13 @@ import Foundation
 
 /// Meetings as plain files people can open, share and back up: one folder per meeting inside the
 /// folder they chose, named "<Subject> - <date time>", with transcript.md and, once there is one,
-/// summary.md. Screenshots and video recordings will go into the same folder. The database is only
-/// an index for the meetings list and search.
+/// summary.md, and screenshots in screenshots/. The database is only an index for the meetings list
+/// and search.
 enum MeetingFiles {
     static let rootKey = "meetingsFolder"
     static let transcriptFile = "transcript.md"
     static let summaryFile = "summary.md"
+    static let screenshotsFolder = "screenshots"
 
     /// The folder chosen in setup or Settings; nil until chosen.
     static var root: URL? {
@@ -57,7 +58,7 @@ enum MeetingFiles {
 
     /// Writes transcript.md, and summary.md if the meeting has a summary (removing a stale one if not).
     static func write(_ meeting: Meeting, _ segments: [Segment], to folder: URL) throws {
-        try transcriptMarkdown(meeting, segments).write(to: folder.appending(path: transcriptFile), atomically: true, encoding: .utf8)
+        try transcriptMarkdown(meeting, segments, screenshots: screenshots(in: folder)).write(to: folder.appending(path: transcriptFile), atomically: true, encoding: .utf8)
         let summaryURL = folder.appending(path: summaryFile)
         if let summary = meeting.summary {
             try summaryMarkdown(meeting, summary).write(to: summaryURL, atomically: true, encoding: .utf8)
@@ -66,12 +67,56 @@ enum MeetingFiles {
         }
     }
 
-    static func transcriptMarkdown(_ meeting: Meeting, _ segments: [Segment]) -> String {
+    /// The transcript, with each screenshot placed where it was taken.
+    static func transcriptMarkdown(_ meeting: Meeting, _ segments: [Segment], screenshots: [MeetingScreenshot] = []) -> String {
         var out = "# \(meeting.title)\n\n*\(heading(meeting))*\n\n"
+        var shots = screenshots[...]
+        func image(_ shot: MeetingScreenshot) -> String {
+            "![Screenshot at \(TranscriptExport.timestamp(shot.atMs))](<\(screenshotsFolder)/\(shot.url.lastPathComponent)>)\n\n"
+        }
         for s in segments {
+            while let shot = shots.first, shot.atMs <= s.startMs {
+                out += image(shot)
+                shots.removeFirst()
+            }
             out += "**[\(TranscriptExport.timestamp(s.startMs))] \(s.source.speaker):** \(s.text)\n\n"
         }
+        for shot in shots { out += image(shot) }
         return out
+    }
+
+    // MARK: Screenshots
+
+    /// Saves a screenshot in the meeting's screenshots/ folder, named by when it was taken in the meeting
+    /// ("00.13.21.png") so the folder sorts in meeting order.
+    static func saveScreenshot(_ png: Data, at ms: Int, in folder: URL) throws -> MeetingScreenshot {
+        let dir = folder.appending(path: screenshotsFolder, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let s = max(ms, 0) / 1000
+        let base = String(format: "%02d.%02d.%02d", s / 3600, (s / 60) % 60, s % 60)
+        var url = dir.appending(path: "\(base).png")
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = dir.appending(path: "\(base) (\(n)).png")
+            n += 1
+        }
+        try png.write(to: url)
+        return MeetingScreenshot(url: url, atMs: ms)
+    }
+
+    /// The meeting's screenshots in meeting order; the time comes from the file name.
+    static func screenshots(in folder: URL) -> [MeetingScreenshot] {
+        let dir = folder.appending(path: screenshotsFolder, directoryHint: .isDirectory)
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        return files
+            .filter { $0.pathExtension.lowercased() == "png" }
+            .compactMap { url -> MeetingScreenshot? in
+                let parts = url.lastPathComponent.prefix(8).split(separator: ".").compactMap { Int($0) }
+                guard parts.count == 3 else { return nil }
+                return MeetingScreenshot(url: url, atMs: (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000)
+            }
+            // Without the extension, so "00.13.21" comes before "00.13.21 (2)".
+            .sorted { ($0.atMs, $0.url.deletingPathExtension().lastPathComponent) < ($1.atMs, $1.url.deletingPathExtension().lastPathComponent) }
     }
 
     static func summaryMarkdown(_ meeting: Meeting, _ s: MeetingSummary) -> String {
@@ -91,4 +136,12 @@ enum MeetingFiles {
         let date = meeting.startedAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year().hour().minute())
         return "\(date) · \((meeting.durationMs + 59_999) / 60_000) min"
     }
+}
+
+/// A screenshot taken during a meeting, `atMs` milliseconds from the start.
+struct MeetingScreenshot: Identifiable, Hashable, Sendable {
+    let url: URL
+    let atMs: Int
+
+    var id: URL { url }
 }

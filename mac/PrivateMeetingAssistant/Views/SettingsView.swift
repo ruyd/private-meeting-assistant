@@ -8,21 +8,31 @@ enum SettingsKeys {
     static let removeEcho = "removeEcho"
 }
 
+/// The Settings window: one tab per area, each setting with a plain-language note on what it does.
 struct SettingsView: View {
-    @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
-    @AppStorage(SettingsKeys.language) private var language = "auto"
-    @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
-    @AppStorage(Uninstaller.keepMeetingsKey) private var keepMeetings = true
-    @State private var meetingsFolder = MeetingFiles.root
-    @State private var confirmUninstall = false
-    @State private var uninstallError: String?
-    @State private var micPermission = MicCapture.permission
-    private let store = ModelStore.shared
-
-    private static let languages: [(code: String, name: String)] = [
+    static let languages: [(code: String, name: String)] = [
         ("auto", "Detect automatically"), ("en", "English"), ("es", "Spanish"), ("pt", "Portuguese"),
         ("fr", "French"), ("de", "German"), ("it", "Italian"), ("nl", "Dutch"), ("ja", "Japanese"), ("zh", "Chinese"),
     ]
+
+    var body: some View {
+        TabView {
+            Tab("Transcription", systemImage: "waveform") { TranscriptionSettings() }
+            Tab("Summaries", systemImage: "text.alignleft") { Form { SummarySettings() }.formStyle(.grouped) }
+            Tab("Storage", systemImage: "folder") { StorageSettings() }
+            Tab("Permissions", systemImage: "hand.raised") { PermissionSettings() }
+            Tab("About", systemImage: "info.circle") { AboutSettings() }
+        }
+        .scenePadding(.top)
+    }
+}
+
+/// Settings › Transcription: the speech model, language and echo removal.
+private struct TranscriptionSettings: View {
+    @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
+    @AppStorage(SettingsKeys.language) private var language = "auto"
+    @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
+    private let store = ModelStore.shared
 
     private var englishOnly: Bool { SpeechModel.find(modelID)?.englishOnly ?? false }
 
@@ -38,49 +48,42 @@ struct SettingsView: View {
             } header: {
                 Text("Speech model")
             } footer: {
-                Text("Models are downloaded once from Hugging Face and run on this Mac. Each hour of meeting adds about 1 MB of transcript.")
+                Text("The speech model turns what's said into text, right on this Mac. Bigger models catch more words and names but use more memory and battery. Each is downloaded once from Hugging Face; an hour of meeting then adds only about 1 MB of transcript.")
             }
 
             Section {
-                Picker("Language", selection: englishOnly ? .constant("en") : $language) {
-                    ForEach(Self.languages, id: \.code) { Text($0.name).tag($0.code) }
+                Picker(selection: englishOnly ? .constant("en") : $language) {
+                    ForEach(SettingsView.languages, id: \.code) { Text($0.name).tag($0.code) }
+                } label: {
+                    Text("Language")
+                    Text(englishOnly
+                        ? "This model only understands English. Pick another model for other languages."
+                        : "Choose the language your meetings are in, or let the model work it out. Setting it is a little more accurate.")
                 }
                 .disabled(englishOnly)
-            } footer: {
-                if englishOnly { Text("English-only models always transcribe English.") }
-            }
 
-            SummarySettings()
-
-            Section {
-                Toggle("Remove speaker echo from my microphone", isOn: $removeEcho)
+                Toggle(isOn: $removeEcho) {
+                    Text("Remove speaker echo")
+                    Text("Without headphones your microphone also hears the others through your speakers, so their words would show up twice. This keeps them out of “Me” while everything you say still comes through.")
+                }
             } header: {
-                Text("Recording")
-            } footer: {
-                Text("Without headphones, your mic also hears the other participants through the speakers. This keeps their voices out of “Me”, while everything you say still comes through. It learns your setup during the first second the others speak.")
+                Text("While recording")
             }
+        }
+        .formStyle(.grouped)
+        .onAppear { store.refresh() }
+    }
+}
 
-            Section("Permissions") {
-                LabeledContent("Microphone") {
-                    HStack {
-                        Text(micPermissionText).foregroundStyle(.secondary)
-                        Button("Open Settings") { openPrivacyPane("Privacy_Microphone") }
-                    }
-                }
-                LabeledContent("System audio") {
-                    Button("Open Settings") { openPrivacyPane("Privacy_ScreenCapture") }
-                }
-                Text("macOS asks the first time you record. If “Them” stays silent while audio is playing, allow this app under **System Audio Recording Only**.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
+/// Settings › Storage: where meetings are kept, and setup.
+private struct StorageSettings: View {
+    @State private var meetingsFolder = MeetingFiles.root
 
+    var body: some View {
+        Form {
             Section {
-                LabeledContent("Meetings folder") {
+                LabeledContent {
                     HStack {
-                        Text(meetingsFolder?.path.replacingOccurrences(of: NSHomeDirectory(), with: "~") ?? "Not chosen yet")
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
                         Button("Change…") {
                             if let url = chooseMeetingsFolder() {
                                 MeetingFiles.root = url
@@ -91,34 +94,134 @@ struct SettingsView: View {
                             Button("Show in Finder") { NSWorkspace.shared.open(meetingsFolder) }
                         }
                     }
+                } label: {
+                    Text("Meetings folder")
+                    Text(meetingsFolder?.path.replacingOccurrences(of: NSHomeDirectory(), with: "~") ?? "Not chosen yet")
+                        .textSelection(.enabled)
                 }
-                Toggle("Keep my meetings when uninstalling", isOn: $keepMeetings)
-                HStack {
-                    Spacer()
-                    Button("Uninstall Private Meeting Assistant…", role: .destructive) { confirmUninstall = true }
+            } header: {
+                Text("Your meetings")
+            } footer: {
+                Text("Every meeting gets its own folder here, named after its subject and date, with the transcript and summary as Markdown files and any screenshots you took. They're ordinary files: open, share or back them up like any document. Changing the folder applies to new meetings; earlier ones stay where they are.")
+            }
+
+            Section {
+                LabeledContent {
+                    Button("Run Setup Again…") { NotificationCenter.default.post(name: SetupView.reopen, object: nil) }
+                } label: {
+                    Text("First-run setup")
+                    Text("Walks through the meetings folder, permissions and downloads again.")
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// Settings › Permissions: what macOS lets the app hear and see, and why it asks.
+private struct PermissionSettings: View {
+    @State private var micPermission = MicCapture.permission
+    @State private var screenPermission = ScreenCapture.hasPermission
+
+    var body: some View {
+        Form {
+            Section {
+                permission(
+                    "Microphone", status: micStatus, allowed: micPermission == .authorized,
+                    note: "Needed to record you. Recording asks the first time.", pane: "Privacy_Microphone"
+                )
+                permission(
+                    "System audio", status: nil, allowed: nil,
+                    note: "Lets the app hear the other people in your calls. If “Them” stays silent while others talk, allow this app under System Audio Recording Only.",
+                    pane: "Privacy_ScreenCapture"
+                )
+                permission(
+                    "Screen Recording", status: screenPermission ? "Allowed" : "Not allowed", allowed: screenPermission,
+                    note: "Only for screenshots during meetings. Nothing on screen is captured unless you press Screenshot.",
+                    pane: "Privacy_ScreenCapture"
+                )
+            } header: {
+                Text("What the app can hear and see")
+            } footer: {
+                Text("Audio, screenshots and transcripts never leave this Mac. macOS may ask you to reopen the app after you change a permission.")
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear {
+            micPermission = MicCapture.permission
+            screenPermission = ScreenCapture.hasPermission
+        }
+    }
+
+    private func permission(_ title: String, status: String?, allowed: Bool?, note: String, pane: String) -> some View {
+        LabeledContent {
+            HStack {
+                if let status {
+                    Label(status, systemImage: allowed == true ? "checkmark.circle.fill" : "exclamationmark.circle")
+                        .foregroundStyle(allowed == true ? .green : .orange)
+                }
+                Button("Open System Settings") { openPrivacyPane(pane) }
+            }
+        } label: {
+            Text(title)
+            Text(note)
+        }
+    }
+
+    private var micStatus: String {
+        switch micPermission {
+        case .authorized: "Allowed"
+        case .denied: "Not allowed"
+        case .restricted: "Blocked by a device policy"
+        case .notDetermined: "Not asked yet"
+        @unknown default: "Unknown"
+        }
+    }
+
+    private func openPrivacyPane(_ anchor: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+/// Settings › About: version, the privacy promise, and uninstalling.
+private struct AboutSettings: View {
+    @AppStorage(Uninstaller.keepMeetingsKey) private var keepMeetings = true
+    @State private var confirmUninstall = false
+    @State private var uninstallError: String?
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Version", value: version)
+                LabeledContent {
+                    Text("Everything stays on this Mac")
+                } label: {
+                    Text("Privacy")
+                    Text("Recording, transcription and summaries all run locally. The only downloads are the models, and nothing you record is ever uploaded.")
+                }
+            }
+
+            Section {
+                Toggle(isOn: $keepMeetings) {
+                    Text("Keep my meetings")
+                    Text("Leaves your meetings folder in place when the app is removed.")
+                }
+                LabeledContent {
+                    Button("Uninstall…", role: .destructive) { confirmUninstall = true }
+                } label: {
+                    Text("Uninstall Private Meeting Assistant")
+                    Text("Moves the app, its speech models and settings to the Trash\(keepMeetings ? "" : ", along with your meetings folder").")
                 }
                 if let uninstallError {
                     Label(uninstallError, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                 }
             } header: {
-                Text("Data")
-            } footer: {
-                Text("Each meeting is a folder here, with transcript.md and summary.md. Changing the folder applies to new meetings; existing ones stay where they are. Uninstall moves the app, its speech models and settings to the Trash, and your meetings folder too if you uncheck the box.")
-            }
-
-            Section {
-                Button("Run Setup Again…") { NotificationCenter.default.post(name: SetupView.reopen, object: nil) }
-            } footer: {
-                Text("Walks through the meetings folder, permissions and downloads again.")
-            }
-
-            Section("About") {
-                LabeledContent("Version", value: version)
-                LabeledContent("Privacy", value: "Audio and transcripts stay on this Mac.")
+                Text("Uninstall")
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Settings")
         .confirmationDialog("Uninstall Private Meeting Assistant?", isPresented: $confirmUninstall) {
             Button(keepMeetings ? "Uninstall, Keep Meetings" : "Uninstall and Delete Meetings", role: .destructive) {
                 do {
@@ -130,31 +233,11 @@ struct SettingsView: View {
         } message: {
             Text("These move to the Trash, and the app quits:\n" + Uninstaller.items(keepMeetings: keepMeetings).map { "• \($0.label)" }.joined(separator: "\n"))
         }
-        .onAppear {
-            store.refresh()
-            micPermission = MicCapture.permission
-        }
-    }
-
-    private var micPermissionText: String {
-        switch micPermission {
-        case .authorized: "Allowed"
-        case .denied: "Denied"
-        case .restricted: "Blocked by a device policy"
-        case .notDetermined: "Not asked yet"
-        @unknown default: "Unknown"
-        }
     }
 
     private var version: String {
         let info = Bundle.main.infoDictionary
         return "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
-    }
-
-    private func openPrivacyPane(_ anchor: String) {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
-            NSWorkspace.shared.open(url)
-        }
     }
 }
 
@@ -230,11 +313,14 @@ private struct SummarySettings: View {
 
     var body: some View {
         Section {
-            Picker("Engine", selection: $choice) {
+            Picker(selection: $choice) {
                 Text("Automatic").tag(SummaryEngine.Choice.automatic.rawValue)
                 Text("Your Ollama").tag(SummaryEngine.Choice.yours.rawValue)
                     .selectionDisabled(ollama.yours.problem != nil)
                 Text("Downloaded Ollama").tag(SummaryEngine.Choice.downloaded.rawValue)
+            } label: {
+                Text("Engine")
+                Text("Ollama is the free program that runs the summary model. Automatic uses yours if it's running, otherwise a private copy downloaded here.")
             }
             LabeledContent("Your Ollama") {
                 if let problem = ollama.yours.problem {
@@ -256,11 +342,14 @@ private struct SummarySettings: View {
                     }
                 }
             }
-            Picker("Model", selection: $model) {
+            Picker(selection: $model) {
                 ForEach(models, id: \.self) { Text($0).tag($0) }
                 if !models.contains(model) {
                     Text("\(model) (not downloaded)").tag(model)
                 }
+            } label: {
+                Text("Model")
+                Text("The language model that reads the transcript. Larger ones write better summaries but take longer.")
             }
             if !models.contains(model), usesYours || ollama.isDownloadedInstalled {
                 let recommended = SummaryEngine.recommendedModel
@@ -278,14 +367,17 @@ private struct SummarySettings: View {
                     }
                 }
             }
-            Toggle("Summarize automatically when a recording stops", isOn: $autoSummarize)
+            Toggle(isOn: $autoSummarize) {
+                Text("Summarize when a recording stops")
+                Text("Writes the summary in the background as soon as you stop. You can always summarize later from the meeting.")
+            }
             if let error = ollama.error {
                 Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
             }
         } header: {
             Text("Summaries")
         } footer: {
-            Text("Summaries are written on this Mac by a local model in Ollama. Automatic uses your Ollama when it's running, otherwise one downloaded here (it runs privately and stops when the app quits). Cloud models are never used.")
+            Text("After a meeting, a model on this Mac reads the transcript and writes the main points, decisions and action items. A downloaded Ollama only runs while the app is open. Cloud models are never used.")
         }
         .task { await ollama.refresh() }
     }

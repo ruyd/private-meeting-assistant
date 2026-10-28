@@ -8,6 +8,7 @@ struct MeetingView: View {
     @Environment(AppNavigation.self) private var navigation
     @State private var meeting: Meeting?
     @State private var segments: [Segment] = []
+    @State private var screenshots: [MeetingScreenshot] = []
     @State private var title = ""
     @State private var confirmDelete = false
     @State private var error: String?
@@ -37,10 +38,10 @@ struct MeetingView: View {
         .confirmationDialog("Delete “\(meeting?.title ?? "")”?", isPresented: $confirmDelete) {
             Button("Delete Meeting", role: .destructive) {
                 library.delete(route.meetingID)
-                navigation.meetingPath.removeAll()
+                navigation.showRecorder()
             }
         } message: {
-            Text("It's removed from your meetings, and its folder (transcript and summary) moves to the Trash.")
+            Text("It's removed from your meetings, and its folder (transcript, summary and screenshots) moves to the Trash.")
         }
         .task(id: route) { load() }
         // Picks up a summary written in the background, renames and action-item changes.
@@ -67,11 +68,15 @@ struct MeetingView: View {
                     }
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(segments) { segment in
+                            ForEach(screenshots(before: segment)) { ScreenshotRow(shot: $0, leadingInset: 62) }
                             TranscriptRow(
                                 source: segment.source, startMs: segment.startMs, text: segment.text,
                                 isFocused: segment.id == route.focusSegmentID
                             )
                             .id(segment.id)
+                        }
+                        ForEach(screenshots.filter { $0.atMs > (segments.last?.startMs ?? -1) }) {
+                            ScreenshotRow(shot: $0, leadingInset: 62)
                         }
                     }
                 }
@@ -88,11 +93,19 @@ struct MeetingView: View {
         .onDisappear { rename() }
     }
 
+    /// Screenshots taken after the previous line started and up to this one.
+    private func screenshots(before segment: Segment) -> [MeetingScreenshot] {
+        guard let index = segments.firstIndex(of: segment) else { return [] }
+        let after = index == 0 ? -1 : segments[index - 1].startMs
+        return screenshots.filter { $0.atMs > after && $0.atMs <= segment.startMs }
+    }
+
     private func load() {
         guard let store = library.store else { return }
         do {
             meeting = try store.meeting(route.meetingID)
             segments = try store.segments(of: route.meetingID)
+            screenshots = meeting.map { MeetingFiles.screenshots(in: $0.folder) } ?? []
             title = meeting?.title ?? ""
         } catch {
             self.error = "Couldn't load the meeting: \(error.localizedDescription)"

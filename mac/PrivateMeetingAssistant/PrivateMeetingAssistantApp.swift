@@ -9,9 +9,14 @@ struct PrivateMeetingAssistantApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .frame(minWidth: 800, minHeight: 560)
+                .frame(minWidth: 900, minHeight: 600)
         }
-        .defaultSize(width: 1100, height: 760)
+        .defaultSize(width: 1280, height: 820)
+
+        Settings {
+            SettingsView()
+                .frame(width: 640, height: 620)
+        }
     }
 }
 

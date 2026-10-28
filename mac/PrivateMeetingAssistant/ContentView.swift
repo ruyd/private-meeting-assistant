@@ -1,43 +1,24 @@
 import SwiftUI
 
-enum SidebarItem: String, CaseIterable, Identifiable {
-    case record, meetings, settings
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .record: "Record"
-        case .meetings: "Meetings"
-        case .settings: "Settings"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .record: "record.circle"
-        case .meetings: "list.bullet.rectangle"
-        case .settings: "gearshape"
-        }
-    }
-}
-
 /// Opens a meeting, optionally scrolled to one transcript line.
 struct MeetingRoute: Hashable {
     let meetingID: Int64
     var focusSegmentID: Int64?
 }
 
-/// Where the window is: the sidebar section and, under Meetings, the open meeting.
+/// What the right half of the window shows: the recording panel or a meeting from the list.
 @MainActor @Observable
 final class AppNavigation {
-    var section: SidebarItem? = .record
-    var meetingPath: [MeetingRoute] = []
-
-    func open(_ route: MeetingRoute) {
-        section = .meetings
-        meetingPath = [route]
+    enum Selection: Hashable {
+        case recorder
+        case meeting(MeetingRoute)
     }
+
+    var selection: Selection? = .recorder
+
+    func open(_ route: MeetingRoute) { selection = .meeting(route) }
+
+    func showRecorder() { selection = .recorder }
 }
 
 struct ContentView: View {
@@ -49,27 +30,20 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarItem.allCases, selection: $navigation.section) { s in
-                HStack {
-                    Label(s.title, systemImage: s.symbol)
-                    if s == .record && recorder.phase == .recording {
-                        Spacer()
-                        Circle().fill(.red).frame(width: 8, height: 8).help("Recording")
-                    }
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
+            MeetingsView(recorder: recorder)
+                .navigationSplitViewColumnWidth(min: 320, ideal: 460, max: 680)
         } detail: {
-            switch navigation.section ?? .record {
-            case .record:
+            switch navigation.selection ?? .recorder {
+            case .recorder:
                 RecordView(recorder: recorder)
-            case .meetings:
-                NavigationStack(path: $navigation.meetingPath) {
-                    MeetingsView()
-                        .navigationDestination(for: MeetingRoute.self) { MeetingView(route: $0) }
-                }
-            case .settings:
-                SettingsView()
+            case .meeting(let route):
+                MeetingView(route: route).id(route)
+            }
+        }
+        .toolbar {
+            ToolbarItem {
+                SettingsLink { Label("Settings", systemImage: "gearshape") }
+                    .help("Speech model, language, summaries and the meetings folder")
             }
         }
         .environment(navigation)

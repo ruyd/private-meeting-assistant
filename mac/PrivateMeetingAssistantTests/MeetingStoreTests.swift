@@ -67,6 +67,20 @@ struct MeetingStoreTests {
         let summary = try String(contentsOf: first.appending(path: "summary.md"), encoding: .utf8)
         #expect(summary.contains("We met.") && summary.contains("- [x] Write docs — *Me*"))
 
+        // Screenshots are named by meeting time and placed in the transcript where they were taken.
+        let shot = try MeetingFiles.saveScreenshot(Data([1]), at: 30_500, in: first)
+        let again = try MeetingFiles.saveScreenshot(Data([2]), at: 30_900, in: first)
+        let late = try MeetingFiles.saveScreenshot(Data([3]), at: 3_725_000, in: first)
+        #expect(shot.url.lastPathComponent == "00.00.30.png" && again.url.lastPathComponent == "00.00.30 (2).png")
+        #expect(MeetingFiles.screenshots(in: first).map(\.url.lastPathComponent) == ["00.00.30.png", "00.00.30 (2).png", "01.02.05.png"])
+        #expect(late.atMs == 3_725_000 && MeetingFiles.screenshots(in: first).last?.atMs == 3_725_000)
+        try MeetingFiles.write(meeting, [Segment(id: 1, meetingID: 1, source: .system, startMs: 61_000, endMs: 62_000, text: "Hi")], to: first)
+        let withShots = try String(contentsOf: first.appending(path: "transcript.md"), encoding: .utf8)
+        let image = try #require(withShots.range(of: "![Screenshot at 00:30](<screenshots/00.00.30.png>)"))
+        let line = try #require(withShots.range(of: "**[01:01] Them:** Hi"))
+        let last = try #require(withShots.range(of: "![Screenshot at 1:02:05](<screenshots/01.02.05.png>)"))
+        #expect(image.lowerBound < line.lowerBound && line.lowerBound < last.lowerBound)
+
         // Renaming keeps the date; a removed summary removes summary.md.
         let renamed = try MeetingFiles.renameFolder(first, title: "Launch", startedAt: date)
         #expect(renamed.lastPathComponent == "Launch - 2026-10-28 14.30")

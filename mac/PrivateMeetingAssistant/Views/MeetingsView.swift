@@ -1,31 +1,55 @@
 import SwiftUI
 
-/// The archive: every meeting, newest first, and full-text search across transcripts, titles and summaries.
+/// The left half of the window: a "New Recording" (or "Now recording") row, then every meeting newest
+/// first as cards, and full-text search across transcripts, titles and summaries.
 struct MeetingsView: View {
+    let recorder: Recorder
     @Environment(MeetingLibrary.self) private var library
+    @Environment(AppNavigation.self) private var navigation
     @State private var query = ""
     @State private var hits: [SearchHit] = []
+    @FocusState private var searchFocused: Bool
+
+    private var isSearching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
-        Group {
-            if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+        @Bindable var navigation = navigation
+        List(selection: $navigation.selection) {
+            Section {
+                RecorderRow(recorder: recorder)
+                    .tag(AppNavigation.Selection.recorder)
+            } header: {
+                sectionTitle("Now")
+            }
+            if isSearching {
                 results
-            } else if library.meetings.isEmpty {
-                ContentUnavailableView(
-                    "No meetings yet",
-                    systemImage: "list.bullet.rectangle",
-                    description: Text("Meetings you record appear here, with their transcripts.")
-                )
             } else {
-                List(library.meetings) { meeting in
-                    NavigationLink(value: MeetingRoute(meetingID: meeting.id)) {
-                        MeetingRow(meeting: meeting)
+                ForEach(groups, id: \.label) { group in
+                    Section {
+                        ForEach(group.meetings) { meeting in
+                            MeetingCard(meeting: meeting)
+                                .tag(AppNavigation.Selection.meeting(MeetingRoute(meetingID: meeting.id)))
+                        }
+                    } header: {
+                        sectionTitle(group.label)
                     }
                 }
             }
         }
+        .listStyle(.sidebar)
+        .overlay {
+            if isSearching && hits.isEmpty {
+                ContentUnavailableView.search(text: query)
+            } else if !isSearching && pastMeetings.isEmpty {
+                ContentUnavailableView(
+                    "No meetings yet",
+                    systemImage: "list.bullet.rectangle",
+                    description: Text("Meetings you record appear here, with their summaries and transcripts.")
+                )
+            }
+        }
         .navigationTitle("Meetings")
-        .searchable(text: $query, prompt: "Search transcripts, titles and summaries")
+        .safeAreaInset(edge: .top, spacing: 0) { header }
         .task(id: query) {
             // Debounce typing, then search.
             try? await Task.sleep(for: .milliseconds(150))
@@ -33,59 +57,239 @@ struct MeetingsView: View {
             hits = (try? library.store?.search(query)) ?? []
         }
         .onAppear { library.refresh() }
-        .overlay(alignment: .bottom) {
+        .safeAreaInset(edge: .bottom) {
             if let error = library.error {
                 Label(error, systemImage: "exclamationmark.triangle").padding().foregroundStyle(.orange)
             }
         }
     }
 
-    private var results: some View {
+    private var header: some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Meetings").font(.system(size: 18, weight: .semibold))
+                Spacer()
+                Text("^[\(pastMeetings.count) recording](inflect: true) · stored locally")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            searchField
+        }
+        .padding(.top, 4)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search", text: $query, prompt: Text("Search titles, summaries, transcripts"))
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .onExitCommand { query = "" }
+            if query.isEmpty {
+                Text("⌘F")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.separator))
+                    .accessibilityHidden(true)
+            } else {
+                Button("Clear Search", systemImage: "xmark.circle.fill") { query = "" }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 36)
+        .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 9))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9)
+                .strokeBorder(searchFocused ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear), lineWidth: 1.5)
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .background {
+            // ⌘F jumps to the search field from anywhere in the window.
+            Button("Search Meetings") { searchFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .hidden()
+        }
+    }
+
+    /// Everything but the meeting being recorded, which has the row at the top.
+    private var pastMeetings: [Meeting] {
+        let live = recorder.phase == .idle ? nil : recorder.meetingID
+        let meetings = library.meetings.filter { $0.id != live }
+        let samples = SampleMeetings.all
+        return samples.isEmpty ? meetings : (meetings + samples).sorted { $0.startedAt > $1.startedAt }
+    }
+
+    private func sectionTitle(_ label: String) -> some View {
+        Text(label.uppercased()).font(.caption2.weight(.semibold)).tracking(0.6)
+    }
+
+    /// Today, Yesterday, Last Week (the five days before), then Older.
+    private var groups: [(label: String, meetings: [Meeting])] {
+        let calendar = Calendar.current
+        var result: [(label: String, meetings: [Meeting])] = []
+        for meeting in pastMeetings {
+            let date = meeting.startedAt
+            let label = if calendar.isDateInToday(date) {
+                "Today"
+            } else if calendar.isDateInYesterday(date) {
+                "Yesterday"
+            } else if let weekAgo = calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: .now)), date >= weekAgo {
+                "Last Week"
+            } else {
+                "Older"
+            }
+            if result.last?.label == label {
+                result[result.count - 1].meetings.append(meeting)
+            } else {
+                result.append((label, [meeting]))
+            }
+        }
+        return result
+    }
+
+    @ViewBuilder private var results: some View {
         let groups = Dictionary(grouping: hits, by: \.meetingID)
         let order = hits.map(\.meetingID).reduce(into: [Int64]()) { if !$0.contains($1) { $0.append($1) } }
-        return Group {
-            if hits.isEmpty {
-                ContentUnavailableView.search(text: query)
-            } else {
-                List {
-                    ForEach(order, id: \.self) { id in
-                        let meetingHits = groups[id] ?? []
-                        Section {
-                            ForEach(meetingHits) { hit in
-                                NavigationLink(value: MeetingRoute(meetingID: hit.meetingID, focusSegmentID: hit.segmentID)) {
-                                    SearchHitRow(hit: hit)
-                                }
-                            }
-                        } header: {
-                            Text("\(meetingHits[0].meetingTitle) · \(meetingHits[0].startedAt.formatted(date: .abbreviated, time: .shortened))")
-                        }
-                    }
+        ForEach(order, id: \.self) { id in
+            let meetingHits = groups[id] ?? []
+            Section {
+                ForEach(meetingHits) { hit in
+                    SearchHitRow(hit: hit)
+                        .tag(AppNavigation.Selection.meeting(MeetingRoute(meetingID: hit.meetingID, focusSegmentID: hit.segmentID)))
                 }
+            } header: {
+                Text("\(meetingHits[0].meetingTitle) · \(meetingHits[0].startedAt.formatted(date: .abbreviated, time: .shortened))")
             }
         }
     }
 }
 
-private struct MeetingRow: View {
-    let meeting: Meeting
+/// The first row: "New Recording", or the meeting being recorded with its running time.
+private struct RecorderRow: View {
+    let recorder: Recorder
+    @Environment(MeetingLibrary.self) private var library
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(meeting.title).font(.headline)
-            HStack(spacing: 8) {
-                Text(meeting.startedAt.formatted(date: .abbreviated, time: .shortened))
-                Text("·")
-                Text(Duration.milliseconds(meeting.durationMs).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated, zeroValueUnits: .show(length: 1))))
-                Text("·")
-                Text("^[\(meeting.segmentCount) line](inflect: true)")
-                if meeting.summary != nil {
-                    Label("Summary", systemImage: "text.alignleft").labelStyle(.iconOnly).help("Has a summary")
+        HStack(spacing: 12) {
+            if let startedAt = recorder.startedAt {
+                Image(systemName: "record.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.red)
+                    .symbolEffect(.pulse)
+                    .frame(width: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(library.meetings.first { $0.id == recorder.meetingID }?.title ?? "Recording")
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(recorder.phase == .finishing ? "Finishing the transcript…" : "Recording")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                ElapsedTime(since: startedAt)
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.red)
+            } else {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.red)
+                    .frame(width: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("New Recording").font(.headline)
+                    Text("Pick a microphone and the apps to listen to").font(.callout).foregroundStyle(.secondary)
                 }
             }
-            .font(.callout)
-            .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
+    }
+}
+
+/// One meeting: a screenshot from it (or the tiled placeholder), the subject, the start of its summary,
+/// duration and time.
+private struct MeetingCard: View {
+    let meeting: Meeting
+    @State private var thumbnail: CGImage?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            preview
+                .frame(width: 96, height: 60)
+                .clipShape(.rect(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(meeting.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text(TranscriptExport.timestamp(meeting.durationMs))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                Text(summaryLine)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .lineSpacing(1)
+                Text(whenLine)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 6)
+        .task(id: meeting.folder) {
+            let folder = meeting.folder
+            thumbnail = await Task.detached {
+                MeetingFiles.screenshots(in: folder).first.flatMap { ScreenCapture.thumbnail(of: $0.url, maxPixels: 240) }
+            }.value
+        }
+    }
+
+    @ViewBuilder private var preview: some View {
+        if let thumbnail {
+            Image(decorative: thumbnail, scale: 1)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else if SampleMeetings.isVoiceOnly(meeting.id) {
+            ZStack {
+                Rectangle().fill(.quaternary.opacity(0.6))
+                Image(systemName: "mic").font(.system(size: 18)).foregroundStyle(.secondary)
+            }
+        } else {
+            TiledPreview(seed: Int(truncatingIfNeeded: meeting.id), badge: SampleMeetings.app(of: meeting.id))
+        }
+    }
+
+    private var whenLine: String {
+        let time = meeting.startedAt.formatted(date: .omitted, time: .shortened)
+        if SampleMeetings.isVoiceOnly(meeting.id) { return "\(time) · Voice only" }
+        return SampleMeetings.app(of: meeting.id).map { "\(time) · \($0)" } ?? time
+    }
+
+    private var summaryLine: String {
+        if let summary = meeting.summary { return summary.summary }
+        if meeting.summaryStatus == "running" { return "Writing the summary…" }
+        if meeting.segmentCount == 0 { return "Nothing was transcribed." }
+        return meeting.summaryStatus.hasPrefix("error: ")
+            ? "The summary couldn't be written."
+            : "No summary yet · \(meeting.segmentCount) lines"
+    }
+}
+
+/// "14:32", counting up once a second.
+struct ElapsedTime: View {
+    let since: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: since, by: 1)) { context in
+            Text(TranscriptExport.timestamp(Int(context.date.timeIntervalSince(since) * 1000)))
+        }
     }
 }
 

@@ -17,6 +17,9 @@ final class Recorder {
     private(set) var error: String?
     /// The meeting being recorded, or the one just finished.
     private(set) var meetingID: Int64?
+    /// Screenshots taken during this recording, in order.
+    private(set) var screenshots: [MeetingScreenshot] = []
+    private(set) var isTakingScreenshot = false
 
     @ObservationIgnored private var transcriber: Transcriber?
     @ObservationIgnored private var removeEcho = true
@@ -79,6 +82,7 @@ final class Recorder {
         self.meetingID = meetingID
         library.writeFiles(meetingID)
         lines = []
+        screenshots = []
         segmentIDs = [:]
         backlog = 0
         self.removeEcho = removeEcho && capture.captureSystemAudio
@@ -131,6 +135,24 @@ final class Recorder {
         self.pipeline = nil
         startedAt = nil
         phase = .idle
+    }
+
+    /// Screenshots the app being recorded (or the screen, when recording all audio) into the meeting's
+    /// folder, at the current point in the transcript.
+    func takeScreenshot() async {
+        guard phase == .recording, !isTakingScreenshot, let meetingID, let startedAt,
+              let folder = try? library.store?.meeting(meetingID)?.folder
+        else { return }
+        isTakingScreenshot = true
+        defer { isTakingScreenshot = false }
+        let atMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+        do {
+            let png = try await ScreenCapture.screenshot(of: capture.captureSystemAudio ? capture.target.bundleID : nil)
+            screenshots.append(try MeetingFiles.saveScreenshot(png, at: atMs, in: folder))
+            scheduleFileWrite(meetingID)
+        } catch {
+            self.error = "Couldn't take a screenshot: \(error.localizedDescription)"
+        }
     }
 
     private func insert(_ line: TranscriptLine) {
