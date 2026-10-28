@@ -20,6 +20,13 @@ mac/scripts/run-app.sh quit
 
 Then **Read the PNG and look at it**: a blank or missing window means the launch failed.
 
+## Claude desktop Run button
+
+`.claude/launch.json` runs `mac/scripts/preview-server.py` on port 8765: it builds and launches the
+app, and serves a page that mirrors the app's windows every second. Stopping the preview quits the
+app. The mirror needs Screen Recording permission for Claude.app; without it the page says so and
+the app still runs in its own window.
+
 ## Notes
 
 - Save screenshots in the session's scratchpad directory, not the repo.

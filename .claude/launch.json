@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Private Meeting Assistant (macOS app)",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["mac/scripts/preview-server.py", "8765"],
+      "port": 8765
+    }
+  ]
+}
