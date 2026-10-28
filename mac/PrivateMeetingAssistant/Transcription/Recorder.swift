@@ -2,8 +2,8 @@ import Foundation
 import Observation
 import Synchronization
 
-/// A recording in progress: audio capture, live transcription and the transcript so far, saved to
-/// the meeting archive line by line as it's transcribed.
+/// A recording in progress: audio capture, live transcription and the transcript so far. Each line is
+/// saved to the index as it's transcribed, and the meeting's folder (transcript.md) is kept up to date.
 @MainActor @Observable
 final class Recorder {
     enum Phase { case idle, loadingModel, recording, finishing }
@@ -26,9 +26,15 @@ final class Recorder {
     @ObservationIgnored private let library: MeetingLibrary
     /// Database rows of the lines on screen, so lines dropped later as echo are deleted there too.
     @ObservationIgnored private var segmentIDs: [UUID: Int64] = [:]
+    /// Pending rewrite of transcript.md; changes within two seconds are written together.
+    @ObservationIgnored private var fileWrite: Task<Void, Never>?
 
-    init(library: MeetingLibrary = .shared) {
+    /// Overrides the meetings folder setting (for self-tests); nil uses the one chosen in setup.
+    @ObservationIgnored private let meetingsRoot: URL?
+
+    init(library: MeetingLibrary = .shared, meetingsRoot: URL? = nil) {
         self.library = library
+        self.meetingsRoot = meetingsRoot
     }
 
     /// `language` is an ISO code, or nil to detect it. `removeEcho` keeps the other participants'
@@ -67,6 +73,15 @@ final class Recorder {
             return
         }
         self.meetingID = meetingID
+        // The meeting's folder: "<title> - <date time>" in the folder chosen in setup (~/Meetings by default).
+        do {
+            let root = meetingsRoot ?? MeetingFiles.root ?? MeetingFiles.suggestedRoot
+            if meetingsRoot == nil { MeetingFiles.root = root }
+            try store.setFolder(meetingID, MeetingFiles.createFolder(in: root, title: title, startedAt: started))
+        } catch {
+            self.error = "Couldn't create the meeting's folder: \(error.localizedDescription). The transcript is still saved in the app."
+        }
+        library.writeFiles(meetingID)
         lines = []
         segmentIDs = [:]
         backlog = 0
@@ -108,7 +123,11 @@ final class Recorder {
         // The last lines are still hopping to the main actor; let them land before the transcript is
         // read (and, later, saved).
         while undelivered.value > 0 { await Task.yield() }
-        if let meetingID { save { try $0.endMeeting(meetingID, at: Date()) } }
+        if let meetingID {
+            save { try $0.endMeeting(meetingID, at: Date()) }
+            fileWrite?.cancel()
+            library.writeFiles(meetingID)
+        }
         library.refresh()
         self.pipeline = nil
         startedAt = nil
@@ -136,6 +155,18 @@ final class Recorder {
                     meetingID: meetingID, source: line.source, startMs: line.startMs, endMs: line.endMs, text: line.text
                 )
             }
+            scheduleFileWrite(meetingID)
+        }
+    }
+
+    /// Rewrites transcript.md shortly after the transcript changes, batching lines that arrive together.
+    private func scheduleFileWrite(_ meetingID: Int64) {
+        guard fileWrite == nil else { return }
+        fileWrite = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled else { return }
+            self.fileWrite = nil
+            self.library.writeFiles(meetingID)
         }
     }
 

@@ -11,6 +11,9 @@ struct Meeting: Identifiable, Hashable, Sendable {
     var segmentCount: Int
     /// End of the last transcript line, in milliseconds from the start.
     var durationMs: Int
+    /// The meeting's folder of files (transcript.md, summary.md…); nil for meetings recorded before
+    /// folders, until they get one.
+    var folder: URL?
 }
 
 struct Segment: Identifiable, Hashable, Sendable {
@@ -47,10 +50,9 @@ final class MeetingStore: Sendable {
 
     private let db: DatabaseQueue
 
-    /// In the app's data folder, which needs no permission prompt. On uninstall the user can keep a
-    /// copy in Documents (`keptCopyFolder`).
+    /// The index lives in the app's data folder; the meetings themselves are folders of files in the
+    /// folder the user chose (`MeetingFiles`).
     static var defaultURL: URL { ModelStore.dataFolder.appending(path: "meetings.sqlite") }
-    static var keptCopyFolder: URL { URL.documentsDirectory.appending(path: "Private Meeting Assistant", directoryHint: .isDirectory) }
 
     static func open(at url: URL = defaultURL) throws -> MeetingStore {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -68,6 +70,10 @@ final class MeetingStore: Sendable {
         }
         try db.write { db in
             try db.execute(sql: Self.schema)
+            // Added after the prototype: where each meeting's files are.
+            if try !Row.fetchAll(db, sql: "PRAGMA table_info(meetings)").contains(where: { $0["name"] == "folder" }) {
+                try db.execute(sql: "ALTER TABLE meetings ADD COLUMN folder TEXT")
+            }
             // A recording that was running when the app quit is left without an end time; close it so it
             // doesn't look live forever. A summary that was being written was interrupted.
             try db.execute(sql: "UPDATE meetings SET ended_at = started_at WHERE ended_at IS NULL")
@@ -91,6 +97,12 @@ final class MeetingStore: Sendable {
             let id = db.lastInsertedRowID
             try db.execute(sql: "INSERT INTO meetings_fts (meeting_id, title, summary) VALUES (?, ?, '')", arguments: [id, title])
             return id
+        }
+    }
+
+    func setFolder(_ id: Int64, _ folder: URL?) throws {
+        try db.write { db in
+            try db.execute(sql: "UPDATE meetings SET folder = ? WHERE id = ?", arguments: [folder?.path, id])
         }
     }
 
@@ -221,7 +233,8 @@ final class MeetingStore: Sendable {
     private static let meetingColumns = """
         m.id, m.title, m.started_at, m.ended_at, m.summary_json, m.summary_status,
         (SELECT COUNT(*) FROM segments s WHERE s.meeting_id = m.id),
-        COALESCE((SELECT MAX(end_ms) FROM segments s WHERE s.meeting_id = m.id), 0)
+        COALESCE((SELECT MAX(end_ms) FROM segments s WHERE s.meeting_id = m.id), 0),
+        m.folder
         """
 
     private static func meeting(_ row: Row) -> Meeting {
@@ -229,7 +242,8 @@ final class MeetingStore: Sendable {
         return Meeting(
             id: row[0], title: row[1], startedAt: date(row[2]), endedAt: (row[3] as String?).map(date),
             summary: json.flatMap { try? JSONDecoder().decode(MeetingSummary.self, from: Data($0.utf8)) },
-            summaryStatus: row[5], segmentCount: row[6], durationMs: row[7]
+            summaryStatus: row[5], segmentCount: row[6], durationMs: row[7],
+            folder: (row[8] as String?).map { URL(fileURLWithPath: $0, isDirectory: true) }
         )
     }
 

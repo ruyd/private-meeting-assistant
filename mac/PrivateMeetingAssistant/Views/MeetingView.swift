@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// One meeting: title, summary (if it has one) and transcript, with copy, export and delete.
 struct MeetingView: View {
@@ -28,8 +27,9 @@ struct MeetingView: View {
                     copy(TranscriptExport.plainText(segments.map { ($0.source, $0.startMs, $0.text) }))
                 }
                 .help("Copy the transcript as text")
-                Button("Export Markdown", systemImage: "square.and.arrow.up") { exportMarkdown() }
-                    .help("Save the meeting as a Markdown file")
+                Button("Show in Finder", systemImage: "folder") { library.showInFinder(route.meetingID) }
+                    .help("Open the meeting's folder (transcript.md, summary.md)")
+                    .disabled(meeting?.folder == nil && MeetingFiles.root == nil)
                 Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
                     .help("Delete this meeting")
             }
@@ -41,7 +41,9 @@ struct MeetingView: View {
                 navigation.meetingPath.removeAll()
             }
         } message: {
-            Text("Its transcript and summary are deleted from this Mac. This can't be undone.")
+            Text(meeting?.folder == nil
+                ? "It's removed from your meetings."
+                : "It's removed from your meetings, and its folder (transcript and summary) moves to the Trash.")
         }
         .task(id: route) { load() }
     }
@@ -105,20 +107,6 @@ struct MeetingView: View {
         guard let meeting, !trimmed.isEmpty, trimmed != meeting.title else { return }
         library.rename(meeting.id, to: trimmed)
         self.meeting?.title = trimmed
-    }
-
-    private func exportMarkdown() {
-        guard let meeting else { return }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-        panel.nameFieldStringValue = TranscriptExport.fileName(meeting.title) + ".md"
-        panel.directoryURL = .downloadsDirectory
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try TranscriptExport.markdown(meeting, segments).write(to: url, atomically: true, encoding: .utf8)
-        } catch {
-            self.error = "Couldn't export: \(error.localizedDescription)"
-        }
     }
 }
 

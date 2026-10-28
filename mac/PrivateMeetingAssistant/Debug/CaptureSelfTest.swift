@@ -87,7 +87,7 @@ extension CaptureSelfTest {
         // Saves to its own database in the output folder, never the real archive.
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let store = try? MeetingStore.open(at: dir.appending(path: "meetings.sqlite"))
-        let recorder = Recorder(library: MeetingLibrary(store: store))
+        let recorder = Recorder(library: MeetingLibrary(store: store), meetingsRoot: dir.appending(path: "Meetings"))
         if let a = args.firstIndex(of: "--app"), args.count > a + 1 {
             recorder.capture.target = .app(bundleID: args[a + 1], name: args[a + 1])
         }

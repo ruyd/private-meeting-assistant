@@ -21,7 +21,9 @@ Known gaps and ideas for the Swift app, roughly in priority order. Remove items 
 
 ## Data
 
-- **Restore kept meetings after reinstalling.** Uninstall can save a copy of the meetings to Documents › Private Meeting Assistant, but a fresh install starts empty. Add Settings › Data › "Import Meetings…" to open that copy (looking in Documents unprompted would trigger macOS's Documents permission prompt on launch).
+- **Rebuild the index from the meeting folders.** Each meeting is a folder of Markdown files; the database is only the index for the list and search. After reinstalling (or moving folders around), scan the meetings folder and re-index `transcript.md` and `summary.md`. The same would pick up edits made to those files outside the app, which are currently not read back.
+- **Screenshots and video in the meeting folder.** The folder layout is ready for them; the capture features don't exist yet.
+- **Meetings recorded before folders** (the two from the prototype) get a folder the first time you use Show in Finder on them. A one-time "create folders for all meetings" step would be tidier.
 
 ## Speakers
 

@@ -58,19 +58,37 @@ struct MeetingStoreTests {
         #expect(try copy.search("budget").count == 1)
     }
 
-    @Test func markdownExport() {
-        let meeting = Meeting(
-            id: 1, title: "Sync", startedAt: Date(), endedAt: nil,
+    @Test func meetingFolderFiles() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var date = DateComponents(calendar: .current, year: 2026, month: 10, day: 28, hour: 14, minute: 30).date!
+        #expect(MeetingFiles.folderName(title: "Q4: plan/review", startedAt: date) == "Q4- plan-review - 2026-10-28 14.30")
+
+        // Same subject and minute: the second folder gets a number instead of overwriting.
+        let first = try MeetingFiles.createFolder(in: root, title: "Sync", startedAt: date)
+        let second = try MeetingFiles.createFolder(in: root, title: "Sync", startedAt: date)
+        #expect(first.lastPathComponent == "Sync - 2026-10-28 14.30")
+        #expect(second.lastPathComponent == "Sync - 2026-10-28 14.30 (2)")
+
+        var meeting = Meeting(
+            id: 1, title: "Sync", startedAt: date, endedAt: nil,
             summary: MeetingSummary(summary: "We met.", decisions: ["Ship it"], actionItems: [.init(text: "Write docs", owner: "Me", done: true)]),
-            summaryStatus: "done", segmentCount: 1, durationMs: 61_000
+            summaryStatus: "done", segmentCount: 1, durationMs: 61_000, folder: first
         )
-        let md = TranscriptExport.markdown(meeting, [Segment(id: 1, meetingID: 1, source: .system, startMs: 61_000, endMs: 62_000, text: "Hi")])
-        #expect(md.contains("# Sync"))
-        #expect(md.contains("2 min"))
-        #expect(md.contains("- [x] Write docs — *Me*"))
-        #expect(md.contains("**[01:01] Them:** Hi"))
+        try MeetingFiles.write(meeting, [Segment(id: 1, meetingID: 1, source: .system, startMs: 61_000, endMs: 62_000, text: "Hi")], to: first)
+        let transcript = try String(contentsOf: first.appending(path: "transcript.md"), encoding: .utf8)
+        #expect(transcript.contains("# Sync") && transcript.contains("2 min") && transcript.contains("**[01:01] Them:** Hi"))
+        let summary = try String(contentsOf: first.appending(path: "summary.md"), encoding: .utf8)
+        #expect(summary.contains("We met.") && summary.contains("- [x] Write docs — *Me*"))
+
+        // Renaming keeps the date; a removed summary removes summary.md.
+        let renamed = try MeetingFiles.renameFolder(first, title: "Launch", startedAt: date)
+        #expect(renamed.lastPathComponent == "Launch - 2026-10-28 14.30")
+        meeting.summary = nil
+        try MeetingFiles.write(meeting, [], to: renamed)
+        #expect(!FileManager.default.fileExists(atPath: renamed.appending(path: "summary.md").path))
+        date = date.addingTimeInterval(0)
         #expect(TranscriptExport.fileName("../..") == "-")
-        #expect(TranscriptExport.fileName("Q4: plan/review") == "Q4- plan-review")
     }
 
     /// Opens a copy of the prototype's database, if this Mac has one, to check the schemas match.

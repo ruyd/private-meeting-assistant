@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.language) private var language = "auto"
     @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
     @AppStorage(Uninstaller.keepMeetingsKey) private var keepMeetings = true
+    @State private var meetingsFolder = MeetingFiles.root
     @State private var confirmUninstall = false
     @State private var uninstallError: String?
     @State private var micPermission = MicCapture.permission
@@ -73,18 +74,23 @@ struct SettingsView: View {
             }
 
             Section {
-                LabeledContent("Meetings") {
+                LabeledContent("Meetings folder") {
                     HStack {
-                        Text(MeetingStore.defaultURL.deletingLastPathComponent().path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                        Text(meetingsFolder?.path.replacingOccurrences(of: NSHomeDirectory(), with: "~") ?? "Not chosen yet")
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
-                        Button("Show in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([MeetingStore.defaultURL])
+                        Button("Change…") {
+                            if let url = chooseMeetingsFolder() {
+                                MeetingFiles.root = url
+                                meetingsFolder = url
+                            }
+                        }
+                        if let meetingsFolder {
+                            Button("Show in Finder") { NSWorkspace.shared.open(meetingsFolder) }
                         }
                     }
                 }
                 Toggle("Keep my meetings when uninstalling", isOn: $keepMeetings)
-                    .help("A copy is saved to Documents › Private Meeting Assistant before the app is removed.")
                 HStack {
                     Spacer()
                     Button("Uninstall Private Meeting Assistant…", role: .destructive) { confirmUninstall = true }
@@ -95,7 +101,7 @@ struct SettingsView: View {
             } header: {
                 Text("Data")
             } footer: {
-                Text("Uninstall moves the app, its speech models, settings and meetings to the Trash. With the box checked, a copy of your meetings is saved to Documents › Private Meeting Assistant first (macOS may ask to allow access to Documents). Dragging the app to the Trash yourself leaves everything else in place.")
+                Text("Each meeting is a folder here, with transcript.md and summary.md. Changing the folder applies to new meetings; existing ones stay where they are. Uninstall moves the app, its speech models and settings to the Trash, and your meetings folder too if you uncheck the box.")
             }
 
             Section("About") {
@@ -108,7 +114,7 @@ struct SettingsView: View {
         .confirmationDialog("Uninstall Private Meeting Assistant?", isPresented: $confirmUninstall) {
             Button(keepMeetings ? "Uninstall, Keep Meetings" : "Uninstall and Delete Meetings", role: .destructive) {
                 do {
-                    try Uninstaller.run(keepMeetings: keepMeetings, store: MeetingLibrary.shared.store)
+                    try Uninstaller.run(keepMeetings: keepMeetings)
                 } catch {
                     uninstallError = "Couldn't finish uninstalling: \(error.localizedDescription)"
                 }
@@ -178,4 +184,19 @@ private struct ModelRow: View {
             }
         }
     }
+}
+
+/// Asks where to keep meetings, starting at ~/Meetings. Returns nil if cancelled.
+@MainActor
+func chooseMeetingsFolder() -> URL? {
+    let suggested = MeetingFiles.suggestedRoot
+    try? FileManager.default.createDirectory(at: suggested, withIntermediateDirectories: true)
+    let panel = NSOpenPanel()
+    panel.message = "Choose where to keep your meetings. Each meeting gets its own folder here."
+    panel.prompt = "Use This Folder"
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.canCreateDirectories = true
+    panel.directoryURL = MeetingFiles.root ?? suggested
+    return panel.runModal() == .OK ? panel.url : nil
 }

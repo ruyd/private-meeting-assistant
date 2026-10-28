@@ -9,6 +9,8 @@ struct RecordView: View {
     @AppStorage(SettingsKeys.language) private var language = "auto"
     @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
     @State private var title = ""
+    /// First recording: ask where meetings go before starting.
+    @State private var askForFolder = false
     @State private var apps: [(target: SystemAudioTarget, isPlaying: Bool)] = []
     @State private var devices: [InputDevice] = []
     /// Shown before recording starts, e.g. the lid is closed and the built-in mic is selected.
@@ -40,6 +42,14 @@ struct RecordView: View {
             }
         }
         .task { await refreshSources() }
+        .sheet(isPresented: $askForFolder) {
+            MeetingsFolderSetup { folder in
+                askForFolder = false
+                guard let folder else { return }
+                MeetingFiles.root = folder
+                startRecording()
+            }
+        }
     }
 
     private var header: some View {
@@ -153,6 +163,10 @@ struct RecordView: View {
 
     private func startRecording() {
         guard recorder.phase == .idle else { return }
+        guard MeetingFiles.root != nil else {
+            askForFolder = true
+            return
+        }
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
             await recorder.start(
@@ -328,6 +342,43 @@ struct ModelDownloadRow: View {
                 Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
             }
         }
+    }
+}
+
+/// Asked once, before the first recording: where meeting folders go.
+private struct MeetingsFolderSetup: View {
+    /// The chosen folder, or nil if cancelled.
+    let done: (URL?) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Where should meetings be saved?", systemImage: "folder").font(.title2.bold())
+            Text("Each meeting gets its own folder, named after its subject and date, with the transcript and summary as Markdown files you can open, share and back up. Screenshots and recordings will go there too.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Image(systemName: "folder.fill").foregroundStyle(.blue)
+                Text(MeetingFiles.suggestedRoot.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).monospaced()
+            }
+            HStack {
+                Button("Cancel") { done(nil) }.keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Choose Another Folder…") {
+                    if let url = chooseMeetingsFolder() { done(url) }
+                }
+                Button("Use ~/Meetings") {
+                    do {
+                        try FileManager.default.createDirectory(at: MeetingFiles.suggestedRoot, withIntermediateDirectories: true)
+                        done(MeetingFiles.suggestedRoot)
+                    } catch {
+                        done(nil)
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
     }
 }
 
