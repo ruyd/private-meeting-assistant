@@ -192,6 +192,8 @@ private struct SummarySection: View {
     let meeting: Meeting
     let hasTranscript: Bool
     @Environment(MeetingLibrary.self) private var library
+    /// Briefly shows a checkmark after copying.
+    @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -202,6 +204,20 @@ private struct SummarySection: View {
                     ProgressView().controlSize(.small)
                     Text("Writing with \(MeetingLibrary.summaryModel)…").foregroundStyle(.secondary)
                 } else if hasTranscript {
+                    if let summary = meeting.summary {
+                        Button(copied ? "Copied" : "Copy Summary", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                            copy(MeetingFiles.summarySections(summary).trimmingCharacters(in: .whitespacesAndNewlines))
+                            copied = true
+                            Task {
+                                try? await Task.sleep(for: .seconds(1.5))
+                                copied = false
+                            }
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .contentTransition(.symbolEffect(.replace))
+                        .help("Copy the summary, decisions and action items")
+                    }
                     Button(meeting.summary == nil ? "Summarize" : "Regenerate") {
                         Task { await library.summarize(meeting.id) }
                     }

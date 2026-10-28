@@ -178,7 +178,13 @@ enum MeetingFiles {
     }
 
     static func summaryMarkdown(_ meeting: Meeting, _ s: MeetingSummary) -> String {
-        var out = "# \(meeting.title)\n\n*\(heading(meeting))*\n\n" + participantsMarkdown(meeting) + "## Summary\n\n\(s.summary.trimmingCharacters(in: .whitespacesAndNewlines))\n\n"
+        "# \(meeting.title)\n\n*\(heading(meeting))*\n\n" + participantsMarkdown(meeting) + summarySections(s)
+    }
+
+    /// The summary, decisions and action items as Markdown: summary.md without its title, and what
+    /// the summary's copy button puts on the clipboard.
+    static func summarySections(_ s: MeetingSummary) -> String {
+        var out = "## Summary\n\n\(s.summary.trimmingCharacters(in: .whitespacesAndNewlines))\n\n"
         if !s.decisions.isEmpty {
             out += "## Decisions\n\n" + s.decisions.map { "- \($0)\n" }.joined() + "\n"
         }
