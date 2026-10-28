@@ -63,24 +63,20 @@ final class Recorder {
         }
         guard let transcriber else { return }
 
+        // The meeting's folder: "<title> - <date time>" in the folder chosen in setup (~/Meetings by default).
         let started = Date()
         let meetingID: Int64
         do {
-            meetingID = try store.createMeeting(title: title, startedAt: started)
+            let root = meetingsRoot ?? MeetingFiles.root ?? MeetingFiles.suggestedRoot
+            if meetingsRoot == nil { MeetingFiles.root = root }
+            let folder = try MeetingFiles.createFolder(in: root, title: title, startedAt: started)
+            meetingID = try store.createMeeting(title: title, startedAt: started, folder: folder)
         } catch {
-            self.error = "Couldn't save the meeting: \(error.localizedDescription)"
+            self.error = "Couldn't create the meeting: \(error.localizedDescription)"
             phase = .idle
             return
         }
         self.meetingID = meetingID
-        // The meeting's folder: "<title> - <date time>" in the folder chosen in setup (~/Meetings by default).
-        do {
-            let root = meetingsRoot ?? MeetingFiles.root ?? MeetingFiles.suggestedRoot
-            if meetingsRoot == nil { MeetingFiles.root = root }
-            try store.setFolder(meetingID, MeetingFiles.createFolder(in: root, title: title, startedAt: started))
-        } catch {
-            self.error = "Couldn't create the meeting's folder: \(error.localizedDescription). The transcript is still saved in the app."
-        }
         library.writeFiles(meetingID)
         lines = []
         segmentIDs = [:]

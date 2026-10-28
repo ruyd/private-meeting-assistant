@@ -35,21 +35,16 @@ final class MeetingLibrary {
         }
     }
 
-    /// Rewrites the meeting's transcript.md and summary.md. A meeting without a folder (recorded before
-    /// folders) gets one in the meetings folder, if one is chosen. Returns the folder.
+    /// Rewrites the meeting's transcript.md and summary.md (recreating its folder if it went missing).
+    /// Returns the folder.
     @discardableResult
     func writeFiles(_ id: Int64) -> URL? {
         guard let store else { return nil }
         do {
-            guard var meeting = try store.meeting(id) else { return nil }
-            if meeting.folder == nil || !FileManager.default.fileExists(atPath: meeting.folder!.path) {
-                guard let root = MeetingFiles.root else { return nil }
-                meeting.folder = try MeetingFiles.createFolder(in: root, title: meeting.title, startedAt: meeting.startedAt)
-                try store.setFolder(id, meeting.folder)
-            }
-            guard let folder = meeting.folder else { return nil }
-            try MeetingFiles.write(meeting, store.segments(of: id), to: folder)
-            return folder
+            guard let meeting = try store.meeting(id) else { return nil }
+            try FileManager.default.createDirectory(at: meeting.folder, withIntermediateDirectories: true)
+            try MeetingFiles.write(meeting, store.segments(of: id), to: meeting.folder)
+            return meeting.folder
         } catch {
             self.error = "Couldn't save the meeting's files: \(error.localizedDescription)"
             return nil
@@ -61,8 +56,8 @@ final class MeetingLibrary {
         guard !title.isEmpty, let store else { return }
         do {
             try store.renameMeeting(id, to: title)
-            if let meeting = try store.meeting(id), let folder = meeting.folder, FileManager.default.fileExists(atPath: folder.path) {
-                try store.setFolder(id, MeetingFiles.renameFolder(folder, title: title, startedAt: meeting.startedAt))
+            if let meeting = try store.meeting(id), FileManager.default.fileExists(atPath: meeting.folder.path) {
+                try store.setFolder(id, MeetingFiles.renameFolder(meeting.folder, title: title, startedAt: meeting.startedAt))
             }
         } catch {
             self.error = "Couldn't rename: \(error.localizedDescription)"
@@ -86,7 +81,7 @@ final class MeetingLibrary {
         refresh()
     }
 
-    /// Opens the meeting's folder in Finder, creating it first for meetings recorded before folders.
+    /// Opens the meeting's folder in Finder, with transcript.md selected.
     func showInFinder(_ id: Int64) {
         guard let folder = writeFiles(id) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([folder.appending(path: MeetingFiles.transcriptFile)])

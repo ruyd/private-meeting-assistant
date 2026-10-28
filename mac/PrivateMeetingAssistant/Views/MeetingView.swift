@@ -29,7 +29,6 @@ struct MeetingView: View {
                 .help("Copy the transcript as text")
                 Button("Show in Finder", systemImage: "folder") { library.showInFinder(route.meetingID) }
                     .help("Open the meeting's folder (transcript.md, summary.md)")
-                    .disabled(meeting?.folder == nil && MeetingFiles.root == nil)
                 Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
                     .help("Delete this meeting")
             }
@@ -41,9 +40,7 @@ struct MeetingView: View {
                 navigation.meetingPath.removeAll()
             }
         } message: {
-            Text(meeting?.folder == nil
-                ? "It's removed from your meetings."
-                : "It's removed from your meetings, and its folder (transcript and summary) moves to the Trash.")
+            Text("It's removed from your meetings, and its folder (transcript and summary) moves to the Trash.")
         }
         .task(id: route) { load() }
     }

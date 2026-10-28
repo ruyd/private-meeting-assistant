@@ -11,9 +11,8 @@ struct Meeting: Identifiable, Hashable, Sendable {
     var segmentCount: Int
     /// End of the last transcript line, in milliseconds from the start.
     var durationMs: Int
-    /// The meeting's folder of files (transcript.md, summary.md…); nil for meetings recorded before
-    /// folders, until they get one.
-    var folder: URL?
+    /// The meeting's folder of files: transcript.md, summary.md, and later screenshots and video.
+    var folder: URL
 }
 
 struct Segment: Identifiable, Hashable, Sendable {
@@ -41,8 +40,8 @@ struct SearchHit: Identifiable, Hashable, Sendable {
     var id: String { "\(meetingID)-\(segmentID.map(String.init) ?? "meeting")" }
 }
 
-/// The meeting archive: a SQLite database with full-text search. Same schema and file as the Tauri
-/// prototype, so meetings recorded there show up here.
+/// The index of meetings: a SQLite database with full-text search, for the meetings list and search.
+/// The meetings themselves are folders of Markdown files (`MeetingFiles`).
 final class MeetingStore: Sendable {
     /// Mark highlighted matches in search snippets: control characters, so nothing needs escaping.
     static let highlightStart = "\u{1}"
@@ -50,9 +49,7 @@ final class MeetingStore: Sendable {
 
     private let db: DatabaseQueue
 
-    /// The index lives in the app's data folder; the meetings themselves are folders of files in the
-    /// folder the user chose (`MeetingFiles`).
-    static var defaultURL: URL { ModelStore.dataFolder.appending(path: "meetings.sqlite") }
+    static var defaultURL: URL { ModelStore.dataFolder.appending(path: "index.sqlite") }
 
     static func open(at url: URL = defaultURL) throws -> MeetingStore {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -70,10 +67,6 @@ final class MeetingStore: Sendable {
         }
         try db.write { db in
             try db.execute(sql: Self.schema)
-            // Added after the prototype: where each meeting's files are.
-            if try !Row.fetchAll(db, sql: "PRAGMA table_info(meetings)").contains(where: { $0["name"] == "folder" }) {
-                try db.execute(sql: "ALTER TABLE meetings ADD COLUMN folder TEXT")
-            }
             // A recording that was running when the app quit is left without an end time; close it so it
             // doesn't look live forever. A summary that was being written was interrupted.
             try db.execute(sql: "UPDATE meetings SET ended_at = started_at WHERE ended_at IS NULL")
@@ -81,28 +74,23 @@ final class MeetingStore: Sendable {
         }
     }
 
-    /// Writes a self-contained copy of the whole archive to `url` (which must not exist), consistent
-    /// even while recording.
-    func backUp(to url: URL) throws {
-        try db.writeWithoutTransaction { db in
-            try db.execute(sql: "VACUUM INTO ?", arguments: [url.path])
-        }
-    }
-
     // MARK: Meetings
 
-    func createMeeting(title: String, startedAt: Date) throws -> Int64 {
+    func createMeeting(title: String, startedAt: Date, folder: URL) throws -> Int64 {
         try db.write { db in
-            try db.execute(sql: "INSERT INTO meetings (title, started_at) VALUES (?, ?)", arguments: [title, Self.timestamp(startedAt)])
+            try db.execute(
+                sql: "INSERT INTO meetings (title, started_at, folder) VALUES (?, ?, ?)",
+                arguments: [title, Self.timestamp(startedAt), folder.path]
+            )
             let id = db.lastInsertedRowID
             try db.execute(sql: "INSERT INTO meetings_fts (meeting_id, title, summary) VALUES (?, ?, '')", arguments: [id, title])
             return id
         }
     }
 
-    func setFolder(_ id: Int64, _ folder: URL?) throws {
+    func setFolder(_ id: Int64, _ folder: URL) throws {
         try db.write { db in
-            try db.execute(sql: "UPDATE meetings SET folder = ? WHERE id = ?", arguments: [folder?.path, id])
+            try db.execute(sql: "UPDATE meetings SET folder = ? WHERE id = ?", arguments: [folder.path, id])
         }
     }
 
@@ -119,14 +107,11 @@ final class MeetingStore: Sendable {
         }
     }
 
-    /// Deletes the meeting and its transcript. Returns its audio folder, if it kept one, for the caller to remove.
-    @discardableResult
-    func deleteMeeting(_ id: Int64) throws -> String? {
+    /// Removes the meeting and its transcript from the index (its folder is the caller's business).
+    func deleteMeeting(_ id: Int64) throws {
         try db.write { db in
-            let audio = try String.fetchOne(db, sql: "SELECT audio_dir FROM meetings WHERE id = ?", arguments: [id])
             try db.execute(sql: "DELETE FROM meetings WHERE id = ?", arguments: [id])
             try db.execute(sql: "DELETE FROM meetings_fts WHERE meeting_id = ?", arguments: [id])
-            return audio
         }
     }
 
@@ -243,30 +228,24 @@ final class MeetingStore: Sendable {
             id: row[0], title: row[1], startedAt: date(row[2]), endedAt: (row[3] as String?).map(date),
             summary: json.flatMap { try? JSONDecoder().decode(MeetingSummary.self, from: Data($0.utf8)) },
             summaryStatus: row[5], segmentCount: row[6], durationMs: row[7],
-            folder: (row[8] as String?).map { URL(fileURLWithPath: $0, isDirectory: true) }
+            folder: URL(fileURLWithPath: row[8], isDirectory: true)
         )
     }
 
-    /// RFC 3339 timestamps, as the prototype stored them.
-    static func timestamp(_ date: Date) -> String {
-        date.formatted(.iso8601.year().month().day().time(includingFractionalSeconds: true).timeZone(separator: .omitted))
-    }
+    /// ISO 8601 in UTC, which also sorts chronologically as text.
+    private static let dateFormat = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
 
-    static func date(_ text: String) -> Date {
-        (try? Date(text, strategy: .iso8601.year().month().day().time(includingFractionalSeconds: true)))
-            ?? (try? Date(text, strategy: .iso8601))
-            ?? ISO8601DateFormatter().date(from: text)
-            ?? .distantPast
-    }
+    static func timestamp(_ date: Date) -> String { date.formatted(dateFormat) }
 
-    // The prototype's schema (src-tauri/src/db/schema.sql), unchanged.
+    static func date(_ text: String) -> Date { (try? Date(text, strategy: dateFormat)) ?? .distantPast }
+
     private static let schema = """
         CREATE TABLE IF NOT EXISTS meetings (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             title          TEXT    NOT NULL,
             started_at     TEXT    NOT NULL,
             ended_at       TEXT,
-            audio_dir      TEXT,
+            folder         TEXT    NOT NULL,
             summary_json   TEXT,
             summary_status TEXT    NOT NULL DEFAULT 'none'
         );
@@ -281,6 +260,7 @@ final class MeetingStore: Sendable {
         );
         CREATE INDEX IF NOT EXISTS segments_meeting ON segments(meeting_id, start_ms);
 
+        -- Transcript text, kept in sync by triggers.
         CREATE VIRTUAL TABLE IF NOT EXISTS segments_fts USING fts5(
             text, content='segments', content_rowid='id', tokenize='porter unicode61'
         );
@@ -291,13 +271,9 @@ final class MeetingStore: Sendable {
             INSERT INTO segments_fts(segments_fts, rowid, text) VALUES ('delete', old.id, old.text);
         END;
 
+        -- Title and summary per meeting, maintained by MeetingStore.
         CREATE VIRTUAL TABLE IF NOT EXISTS meetings_fts USING fts5(
             meeting_id UNINDEXED, title, summary, tokenize='porter unicode61'
-        );
-
-        CREATE TABLE IF NOT EXISTS settings (
-            key   TEXT PRIMARY KEY,
-            value TEXT NOT NULL
         );
         """
 }
