@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Private Meeting Assistant transcribes your side of meetings on this Mac. Audio never leaves your computer.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Private Meeting Assistant transcribes the other participants of your calls on this Mac. Audio never leaves your computer.</string>
+</dict>
+</plist>

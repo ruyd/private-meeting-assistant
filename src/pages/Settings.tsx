@@ -1,0 +1,256 @@
+import { useCallback, useEffect, useState } from "react";
+import { useRecording } from "../App";
+import { ErrorBox, Spinner } from "../components";
+import {
+  api,
+  errorMessage,
+  events,
+  subscribe,
+  type DownloadProgress,
+  type ModelInfo,
+  type OllamaStatus,
+  type Settings,
+} from "../lib/api";
+import { bytes } from "../lib/format";
+
+const LANGUAGES: [string, string][] = [
+  ["auto", "Detect automatically"],
+  ["en", "English"],
+  ["es", "Spanish"],
+  ["pt", "Portuguese"],
+  ["fr", "French"],
+  ["de", "German"],
+  ["it", "Italian"],
+  ["nl", "Dutch"],
+  ["ja", "Japanese"],
+  ["zh", "Chinese"],
+];
+
+export default function SettingsPage() {
+  const rec = useRecording();
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [ollama, setOllama] = useState<OllamaStatus | null>(null);
+  const [downloads, setDownloads] = useState<Record<string, DownloadProgress>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshOllama = useCallback(() => {
+    setOllama(null);
+    api.ollamaStatus().then(setOllama);
+  }, []);
+
+  useEffect(() => {
+    api.getSettings().then(setSettings);
+    api.listModels().then(setModels);
+    refreshOllama();
+  }, [refreshOllama]);
+
+  useEffect(
+    () => subscribe(events.modelDownload((p) => setDownloads((d) => ({ ...d, [p.name]: p })))),
+    [],
+  );
+
+  async function update(patch: Partial<Settings>) {
+    if (!settings) return;
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    try {
+      await api.saveSettings(next);
+      if ("ollamaUrl" in patch) refreshOllama();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function download(name: string) {
+    setError(null);
+    setDownloads((d) => ({ ...d, [name]: { name, downloaded: 0, total: null } }));
+    try {
+      await api.downloadModel(name);
+      setModels(await api.listModels());
+      if (settings && !models.find((m) => m.name === settings.whisperModel)?.downloaded) {
+        await update({ whisperModel: name });
+      }
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setDownloads(({ [name]: _, ...rest }) => rest);
+    }
+  }
+
+  if (!settings) return null;
+  const locked = rec.status !== "idle";
+  const englishOnly = settings.whisperModel.endsWith(".en");
+
+  return (
+    <div className="mx-auto flex max-w-2xl flex-col gap-8 p-8">
+      <h1 className="text-xl font-semibold">Settings</h1>
+      {error && <ErrorBox>{error}</ErrorBox>}
+      {locked && <p className="text-sm text-zinc-500">Some settings apply from the next recording.</p>}
+
+      <Section title="Speech recognition" hint="Whisper runs on this Mac. Models are downloaded once from Hugging Face.">
+        <div className="card divide-y divide-zinc-200 dark:divide-zinc-800">
+          {models.map((m) => {
+            const dl = downloads[m.name];
+            return (
+              <label key={m.name} className="flex items-center gap-3 px-4 py-2.5">
+                <input
+                  type="radio"
+                  name="model"
+                  className="accent-accent"
+                  disabled={!m.downloaded}
+                  checked={settings.whisperModel === m.name}
+                  onChange={() => update({ whisperModel: m.name })}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">
+                    {m.name} <span className="font-normal text-zinc-500">· {m.sizeMb} MB</span>
+                  </div>
+                  <div className="text-xs text-zinc-500">{m.description}</div>
+                </div>
+                {m.downloaded ? (
+                  <span className="text-xs text-zinc-500">Downloaded</span>
+                ) : dl ? (
+                  <span className="flex items-center gap-2 text-xs text-zinc-500 tabular-nums">
+                    <Spinner />
+                    {dl.total ? `${Math.round((dl.downloaded / dl.total) * 100)}%` : bytes(dl.downloaded)}
+                  </span>
+                ) : (
+                  <button className="btn" onClick={() => download(m.name)}>
+                    Download
+                  </button>
+                )}
+              </label>
+            );
+          })}
+        </div>
+        <Field label="Language">
+          <select
+            className="input max-w-60"
+            disabled={englishOnly}
+            value={englishOnly ? "en" : settings.language}
+            onChange={(e) => update({ language: e.target.value })}
+          >
+            {LANGUAGES.map(([code, name]) => (
+              <option key={code} value={code}>
+                {name}
+              </option>
+            ))}
+          </select>
+          {englishOnly && <span className="text-xs text-zinc-500">“.en” models are English only.</span>}
+        </Field>
+      </Section>
+
+      <Section title="Summaries" hint="Generated by a local model in Ollama (ollama.com).">
+        <Field label="Ollama URL">
+          <input
+            className="input max-w-72"
+            value={settings.ollamaUrl}
+            onChange={(e) => setSettings({ ...settings, ollamaUrl: e.target.value })}
+            onBlur={(e) => update({ ollamaUrl: e.target.value })}
+          />
+          <button className="btn" onClick={refreshOllama}>
+            Check
+          </button>
+        </Field>
+        <div className="text-sm">
+          {ollama === null ? (
+            <span className="text-zinc-500">Checking…</span>
+          ) : ollama.running ? (
+            <span className="text-green-700 dark:text-green-400">● Ollama is running</span>
+          ) : (
+            <span className="text-red-600 dark:text-red-400">
+              ● Ollama isn't reachable. Install it from ollama.com and start it, then run e.g.{" "}
+              <code className="selectable rounded bg-zinc-100 px-1 dark:bg-zinc-800">ollama pull gemma4:12b</code>
+            </span>
+          )}
+        </div>
+        <Field label="Model">
+          {ollama?.running && ollama.models.length > 0 ? (
+            <select
+              className="input max-w-72"
+              value={settings.ollamaModel}
+              onChange={(e) => update({ ollamaModel: e.target.value })}
+            >
+              {!ollama.models.includes(settings.ollamaModel) && (
+                <option value={settings.ollamaModel}>{settings.ollamaModel} (not installed)</option>
+              )}
+              {ollama.models.map((m) => (
+                <option key={m}>{m}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className="input max-w-72"
+              value={settings.ollamaModel}
+              onChange={(e) => setSettings({ ...settings, ollamaModel: e.target.value })}
+              onBlur={(e) => update({ ollamaModel: e.target.value })}
+            />
+          )}
+        </Field>
+        <Toggle
+          label="Summarize automatically when a recording stops"
+          checked={settings.autoSummarize}
+          onChange={(v) => update({ autoSummarize: v })}
+        />
+      </Section>
+
+      <Section title="Recording">
+        <Toggle
+          label="Capture system audio (other call participants)"
+          checked={settings.captureSystemAudio}
+          onChange={(v) => update({ captureSystemAudio: v })}
+        />
+        <Toggle
+          label="Keep audio recordings (WAV, stored in the app's data folder)"
+          checked={settings.keepAudio}
+          onChange={(v) => update({ keepAudio: v })}
+        />
+      </Section>
+
+      <Section
+        title="Permissions"
+        hint="macOS asks the first time you record. If you declined, enable the app (or your terminal, in development) here."
+      >
+        <div className="flex gap-2">
+          <button className="btn" onClick={() => api.openPrivacySettings("microphone")}>
+            Microphone settings
+          </button>
+          <button className="btn" onClick={() => api.openPrivacySettings("screen")}>
+            Screen &amp; System Audio settings
+          </button>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="font-semibold">{title}</h2>
+        {hint && <p className="text-sm text-zinc-500">{hint}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-24 shrink-0 text-sm text-zinc-600 dark:text-zinc-400">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+      <input type="checkbox" className="accent-accent" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      {label}
+    </label>
+  );
+}
