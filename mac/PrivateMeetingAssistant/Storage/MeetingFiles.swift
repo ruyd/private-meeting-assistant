@@ -69,7 +69,7 @@ enum MeetingFiles {
 
     /// The transcript, with each screenshot placed where it was taken.
     static func transcriptMarkdown(_ meeting: Meeting, _ segments: [Segment], screenshots: [MeetingScreenshot] = []) -> String {
-        var out = "# \(meeting.title)\n\n*\(heading(meeting))*\n\n"
+        var out = "# \(meeting.title)\n\n*\(heading(meeting))*\n\n" + participantsMarkdown(meeting)
         var shots = screenshots[...]
         func image(_ shot: MeetingScreenshot) -> String {
             "![Screenshot at \(TranscriptExport.timestamp(shot.atMs))](<\(screenshotsFolder)/\(shot.url.lastPathComponent)>)\n\n"
@@ -120,7 +120,7 @@ enum MeetingFiles {
     }
 
     static func summaryMarkdown(_ meeting: Meeting, _ s: MeetingSummary) -> String {
-        var out = "# \(meeting.title)\n\n*\(heading(meeting))*\n\n## Summary\n\n\(s.summary.trimmingCharacters(in: .whitespacesAndNewlines))\n\n"
+        var out = "# \(meeting.title)\n\n*\(heading(meeting))*\n\n" + participantsMarkdown(meeting) + "## Summary\n\n\(s.summary.trimmingCharacters(in: .whitespacesAndNewlines))\n\n"
         if !s.decisions.isEmpty {
             out += "## Decisions\n\n" + s.decisions.map { "- \($0)\n" }.joined() + "\n"
         }
@@ -130,6 +130,32 @@ enum MeetingFiles {
             }.joined() + "\n"
         }
         return out
+    }
+
+    /// Who was invited, from the linked calendar or Zoom: the recorder ("Me") first, then the organizer
+    /// and everyone else. Empty when the meeting wasn't started from a calendar entry.
+    static func participantsMarkdown(_ meeting: Meeting) -> String {
+        guard let details = meeting.details, !details.participants.isEmpty else { return "" }
+        var out = "## Participants\n\n"
+        for p in details.participants.filter(\.isMe) + details.others {
+            out += "- \(participantLine(p))\n"
+        }
+        if let platform = details.platform {
+            out += "\n*\(platform.name)\(details.joinURL.map { ": <\($0.absoluteString)>" } ?? "")*\n"
+        }
+        return out + "\n"
+    }
+
+    static func participantLine(_ p: MeetingParticipant) -> String {
+        var line = p.displayName
+        if let email = p.email, p.name?.nilIfBlank != nil { line += " <\(email)>" }
+        var notes: [String] = []
+        if p.isMe { notes.append("Me") }
+        if p.role == .organizer { notes.append("organizer") }
+        if p.role == .optional { notes.append("optional") }
+        if p.response == .declined { notes.append("declined") }
+        if p.response == .tentative { notes.append("tentative") }
+        return notes.isEmpty ? line : "\(line) — \(notes.joined(separator: ", "))"
     }
 
     private static func heading(_ meeting: Meeting) -> String {

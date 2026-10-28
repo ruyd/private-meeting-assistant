@@ -28,6 +28,8 @@ private struct NewRecordingView: View {
     @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
     @AppStorage(MeetingLibrary.autoSummarizeKey) private var autoSummarize = true
     @State private var title = ""
+    /// The calendar or Zoom meeting picked for this recording, with its participants.
+    @State private var details: MeetingDetails?
     /// First recording: ask where meetings go before starting.
     @State private var askForFolder = false
     @State private var apps: [(target: SystemAudioTarget, isPlaying: Bool)] = []
@@ -47,6 +49,10 @@ private struct NewRecordingView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     micRow
                     sources
+                    UpcomingMeetingsSection(selected: $details) { meeting in
+                        details = meeting
+                        title = meeting.title
+                    }
                     // The name and button sit a little above the middle of the space left.
                     Spacer(minLength: 16)
                     centre.frame(maxWidth: .infinity)
@@ -217,6 +223,23 @@ private struct NewRecordingView: View {
             }
             .frame(maxWidth: 520)
 
+            if let details {
+                VStack(spacing: 8) {
+                    HStack(spacing: 6) {
+                        Text("\(details.participants.count) participant\(details.participants.count == 1 ? "" : "s") from \(details.provider.name)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Button("Detach", systemImage: "xmark.circle.fill") { self.details = nil }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.secondary)
+                            .help("Record without this meeting's details")
+                    }
+                    ParticipantsList(details: details)
+                }
+                .frame(maxWidth: 620)
+            }
+
             recordButton
 
             HStack(spacing: 8) {
@@ -270,7 +293,7 @@ private struct NewRecordingView: View {
         Task {
             await recorder.start(
                 title: name.isEmpty ? RecordView.defaultTitle() : name, model: model,
-                language: language == "auto" ? nil : language, removeEcho: removeEcho
+                language: language == "auto" ? nil : language, removeEcho: removeEcho, details: details
             )
         }
     }

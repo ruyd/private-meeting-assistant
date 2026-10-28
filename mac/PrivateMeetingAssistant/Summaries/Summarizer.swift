@@ -16,6 +16,14 @@ struct Summarizer {
         "Me" is the person who recorded the meeting; "Them" is everyone heard through the computer's audio (possibly several people).
         """
 
+    static func participantsNote(_ participants: [MeetingParticipant]) -> String {
+        guard !participants.isEmpty else { return "" }
+        let me = participants.first(where: \.isMe).map { " \"Me\" is \($0.displayName)." } ?? ""
+        let others = participants.filter { !$0.isMe && $0.response != .declined }.map(\.displayName)
+        let them = others.isEmpty ? "" : " Invited participants who may be among \"Them\": \(others.joined(separator: ", ")). Only attribute something to one of them by name if the transcript makes clear who said it."
+        return me + them
+    }
+
     enum Failure: LocalizedError {
         case emptyTranscript
         case unreachable(String)
@@ -34,7 +42,10 @@ struct Summarizer {
         }
     }
 
-    func summarize(_ segments: [Segment]) async throws -> MeetingSummary {
+    /// `participants` (from the linked calendar) lets the model name who "Them" might be and give
+    /// action items real owners.
+    func summarize(_ segments: [Segment], participants: [MeetingParticipant] = []) async throws -> MeetingSummary {
+        let speakerNote = Self.speakerNote + Self.participantsNote(participants)
         let transcript = Self.transcriptText(segments)
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Failure.emptyTranscript }
 
@@ -46,7 +57,7 @@ struct Summarizer {
             var notes: [String] = []
             for (i, chunk) in chunks.enumerated() {
                 notes.append(try await chat("""
-                    You are taking notes on part \(i + 1) of \(chunks.count) of a meeting transcript. \(Self.speakerNote)
+                    You are taking notes on part \(i + 1) of \(chunks.count) of a meeting transcript. \(speakerNote)
                     Write concise bullet-point notes covering topics discussed, any decisions made, and any tasks or commitments (with who owns them). Keep timestamps for key moments.
 
                     Transcript part:
@@ -57,7 +68,7 @@ struct Summarizer {
         }
 
         let raw = try await chat("""
-            You are a meeting assistant. \(Self.speakerNote)
+            You are a meeting assistant. \(speakerNote)
             Produce JSON with:
             - "summary": a short paragraph (3-6 sentences) of what the meeting was about and its outcome
             - "decisions": decisions that were actually agreed (empty list if none)

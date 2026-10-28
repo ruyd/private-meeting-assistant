@@ -13,6 +13,9 @@ struct Meeting: Identifiable, Hashable, Sendable {
     var durationMs: Int
     /// The meeting's folder of files: transcript.md, summary.md, and later screenshots and video.
     var folder: URL
+    /// Subject, schedule and participants from the linked calendar or Zoom, if the recording was
+    /// started from one.
+    var details: MeetingDetails? = nil
 }
 
 struct Segment: Identifiable, Hashable, Sendable {
@@ -67,6 +70,7 @@ final class MeetingStore: Sendable {
         }
         try db.write { db in
             try db.execute(sql: Self.schema)
+            try Self.migrate(db)
             // A recording that was running when the app quit is left without an end time; close it so it
             // doesn't look live forever. A summary that was being written was interrupted.
             try db.execute(sql: "UPDATE meetings SET ended_at = started_at WHERE ended_at IS NULL")
@@ -76,16 +80,39 @@ final class MeetingStore: Sendable {
 
     // MARK: Meetings
 
-    func createMeeting(title: String, startedAt: Date, folder: URL) throws -> Int64 {
+    func createMeeting(title: String, startedAt: Date, folder: URL, details: MeetingDetails? = nil) throws -> Int64 {
         try db.write { db in
             try db.execute(
-                sql: "INSERT INTO meetings (title, started_at, folder) VALUES (?, ?, ?)",
-                arguments: [title, Self.timestamp(startedAt), folder.path]
+                sql: "INSERT INTO meetings (title, started_at, folder, details_json) VALUES (?, ?, ?, ?)",
+                arguments: [title, Self.timestamp(startedAt), folder.path, Self.json(details)]
             )
             let id = db.lastInsertedRowID
-            try db.execute(sql: "INSERT INTO meetings_fts (meeting_id, title, summary) VALUES (?, ?, '')", arguments: [id, title])
+            try db.execute(
+                sql: "INSERT INTO meetings_fts (meeting_id, title, summary, participants) VALUES (?, ?, '', ?)",
+                arguments: [id, title, Self.searchableParticipants(details)]
+            )
             return id
         }
+    }
+
+    /// Attaches (or, with nil, removes) the calendar meeting a recording belongs to.
+    func setDetails(_ id: Int64, _ details: MeetingDetails?) throws {
+        try db.write { db in
+            try db.execute(sql: "UPDATE meetings SET details_json = ? WHERE id = ?", arguments: [Self.json(details), id])
+            try db.execute(
+                sql: "UPDATE meetings_fts SET participants = ? WHERE meeting_id = ?",
+                arguments: [Self.searchableParticipants(details), id]
+            )
+        }
+    }
+
+    private static func json(_ details: MeetingDetails?) -> String? {
+        details.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) }
+    }
+
+    /// Names and emails, so searching for a person finds the meetings they were in.
+    private static func searchableParticipants(_ details: MeetingDetails?) -> String {
+        (details?.participants ?? []).map { [$0.name, $0.email].compactMap { $0 }.joined(separator: " ") }.joined(separator: "\n")
     }
 
     func setFolder(_ id: Int64, _ folder: URL) throws {
@@ -235,7 +262,7 @@ final class MeetingStore: Sendable {
         m.id, m.title, m.started_at, m.ended_at, m.summary_json, m.summary_status,
         (SELECT COUNT(*) FROM segments s WHERE s.meeting_id = m.id),
         COALESCE((SELECT MAX(end_ms) FROM segments s WHERE s.meeting_id = m.id), 0),
-        m.folder
+        m.folder, m.details_json
         """
 
     private static func meeting(_ row: Row) -> Meeting {
@@ -244,7 +271,8 @@ final class MeetingStore: Sendable {
             id: row[0], title: row[1], startedAt: date(row[2]), endedAt: (row[3] as String?).map(date),
             summary: json.flatMap { try? JSONDecoder().decode(MeetingSummary.self, from: Data($0.utf8)) },
             summaryStatus: row[5], segmentCount: row[6], durationMs: row[7],
-            folder: URL(fileURLWithPath: row[8], isDirectory: true)
+            folder: URL(fileURLWithPath: row[8], isDirectory: true),
+            details: (row[9] as String?).flatMap { try? JSONDecoder().decode(MeetingDetails.self, from: Data($0.utf8)) }
         )
     }
 
@@ -255,6 +283,31 @@ final class MeetingStore: Sendable {
 
     static func date(_ text: String) -> Date { (try? Date(text, strategy: dateFormat)) ?? .distantPast }
 
+    /// Changes to databases made by earlier versions.
+    private static func migrate(_ db: Database) throws {
+        if try !db.columns(in: "meetings").contains(where: { $0.name == "details_json" }) {
+            try db.execute(sql: "ALTER TABLE meetings ADD COLUMN details_json TEXT")
+        }
+        // FTS5 tables can't gain columns; rebuild the title and summary index with participants.
+        if try !db.columns(in: "meetings_fts").contains(where: { $0.name == "participants" }) {
+            let rows = try Row.fetchAll(db, sql: "SELECT meeting_id, title, summary FROM meetings_fts")
+            try db.execute(sql: "DROP TABLE meetings_fts")
+            try db.execute(sql: Self.meetingsFTS)
+            for row in rows {
+                try db.execute(
+                    sql: "INSERT INTO meetings_fts (meeting_id, title, summary, participants) VALUES (?, ?, ?, '')",
+                    arguments: [row[0] as DatabaseValue, row[1] as DatabaseValue, row[2] as DatabaseValue]
+                )
+            }
+        }
+    }
+
+    private static let meetingsFTS = """
+        CREATE VIRTUAL TABLE IF NOT EXISTS meetings_fts USING fts5(
+            meeting_id UNINDEXED, title, summary, participants, tokenize='porter unicode61'
+        );
+        """
+
     private static let schema = """
         CREATE TABLE IF NOT EXISTS meetings (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -263,7 +316,8 @@ final class MeetingStore: Sendable {
             ended_at       TEXT,
             folder         TEXT    NOT NULL,
             summary_json   TEXT,
-            summary_status TEXT    NOT NULL DEFAULT 'none'
+            summary_status TEXT    NOT NULL DEFAULT 'none',
+            details_json   TEXT
         );
 
         CREATE TABLE IF NOT EXISTS segments (
@@ -287,9 +341,5 @@ final class MeetingStore: Sendable {
             INSERT INTO segments_fts(segments_fts, rowid, text) VALUES ('delete', old.id, old.text);
         END;
 
-        -- Title and summary per meeting, maintained by MeetingStore.
-        CREATE VIRTUAL TABLE IF NOT EXISTS meetings_fts USING fts5(
-            meeting_id UNINDEXED, title, summary, tokenize='porter unicode61'
-        );
-        """
+        """ + "\n-- Title, summary and participants per meeting, maintained by MeetingStore.\n" + meetingsFTS
 }

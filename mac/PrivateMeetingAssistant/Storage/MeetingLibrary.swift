@@ -106,7 +106,9 @@ final class MeetingLibrary {
             let model = Self.summaryModel
             let choice = SummaryEngine.Choice(rawValue: UserDefaults.standard.string(forKey: Self.summaryEngineKey) ?? "") ?? .automatic
             let url = try await SummaryEngine.shared.endpoint(choice: choice, model: model)
-            let summary = try await Summarizer(baseURL: url, model: model).summarize(store.segments(of: id))
+            let summary = try await Summarizer(baseURL: url, model: model).summarize(
+                store.segments(of: id), participants: store.meeting(id)?.details?.participants ?? []
+            )
             try store.saveSummary(id, summary)
             writeFiles(id)
         } catch {

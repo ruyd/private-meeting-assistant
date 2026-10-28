@@ -58,6 +58,17 @@ struct MeetingView: View {
                         .onSubmit { rename() }
                     Text("\(meeting.startedAt.formatted(date: .complete, time: .shortened)) · \(TranscriptExport.timestamp(meeting.durationMs))")
                         .foregroundStyle(.secondary)
+                    if let details = meeting.details, !details.participants.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 6) {
+                                Text("Participants").font(.headline)
+                                if let platform = details.platform {
+                                    Text("· \(platform.name)").foregroundStyle(.secondary)
+                                }
+                            }
+                            ParticipantsList(details: details)
+                        }
+                    }
                     if let error {
                         Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                     }

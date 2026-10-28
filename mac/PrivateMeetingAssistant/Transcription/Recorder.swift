@@ -43,8 +43,9 @@ final class Recorder {
     }
 
     /// `language` is an ISO code, or nil to detect it. `removeEcho` keeps the other participants'
-    /// voices, heard by the mic through the speakers, out of "Me".
-    func start(title: String, model: SpeechModel, language: String?, removeEcho: Bool = true) async {
+    /// voices, heard by the mic through the speakers, out of "Me". `details` is the calendar or Zoom
+    /// meeting being recorded, if one was picked.
+    func start(title: String, model: SpeechModel, language: String?, removeEcho: Bool = true, details: MeetingDetails? = nil) async {
         guard phase == .idle else { return }
         error = nil
         guard let store = library.store else {
@@ -72,7 +73,7 @@ final class Recorder {
             let root = meetingsRoot ?? MeetingFiles.root ?? MeetingFiles.suggestedRoot
             if meetingsRoot == nil { MeetingFiles.root = root }
             let folder = try MeetingFiles.createFolder(in: root, title: title, startedAt: started)
-            meetingID = try store.createMeeting(title: title, startedAt: started, folder: folder)
+            meetingID = try store.createMeeting(title: title, startedAt: started, folder: folder, details: details)
         } catch {
             self.error = "Couldn't create the meeting: \(error.localizedDescription)"
             phase = .idle

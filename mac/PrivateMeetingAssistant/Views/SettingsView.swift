@@ -19,6 +19,7 @@ struct SettingsView: View {
         TabView {
             Tab("Transcription", systemImage: "waveform") { TranscriptionSettings() }
             Tab("Summaries", systemImage: "text.alignleft") { Form { SummarySettings() }.formStyle(.grouped) }
+            Tab("Accounts", systemImage: "calendar") { AccountSettings() }
             Tab("Storage", systemImage: "folder") { StorageSettings() }
             Tab("Permissions", systemImage: "hand.raised") { PermissionSettings() }
             Tab("About", systemImage: "info.circle") { AboutSettings() }
@@ -72,6 +73,88 @@ private struct TranscriptionSettings: View {
         }
         .formStyle(.grouped)
         .onAppear { store.refresh() }
+    }
+}
+
+/// Settings › Accounts: linking Google, Microsoft 365 and Zoom with the person's own OAuth apps, to
+/// name recordings and list participants from their meetings.
+private struct AccountSettings: View {
+    private let accounts = MeetingAccounts.shared
+
+    var body: some View {
+        Form {
+            ForEach(MeetingProvider.allCases) { AccountSection(provider: $0, accounts: accounts) }
+            Section {
+            } footer: {
+                Text("Only meeting subjects, times, join links and invitees are read, with read-only access. They're fetched from this Mac with your own sign-in and saved with the recording; audio, transcripts and summaries are never sent to these services. Sign-in tokens are kept in your Keychain.")
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct AccountSection: View {
+    let provider: MeetingProvider
+    let accounts: MeetingAccounts
+    @State private var clientID = ""
+    @State private var clientSecret = ""
+
+    var body: some View {
+        Section {
+            if let email = accounts.linked[provider] {
+                LabeledContent {
+                    Button("Unlink") { accounts.unlink(provider) }
+                } label: {
+                    Label(email.isEmpty ? "Linked" : email, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Upcoming meetings show on the Record page.")
+                }
+            } else {
+                TextField("Client ID", text: $clientID, prompt: Text("From your OAuth app"))
+                    .onChange(of: clientID) { UserDefaults.standard.set(clientID.nilIfBlank, forKey: MeetingAccounts.clientIDKey(provider)) }
+                // Microsoft's public clients sign in with PKCE alone.
+                if provider != .microsoft {
+                    SecureField("Client secret", text: $clientSecret, prompt: Text(provider == .zoom ? "If your app has one" : "Required"))
+                        .onChange(of: clientSecret) { accounts.setClientSecret(clientSecret, for: provider) }
+                }
+                LabeledContent {
+                    if accounts.signingIn == provider {
+                        HStack {
+                            ProgressView().controlSize(.small)
+                            Text("Finish signing in in your browser…").foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Button("Link \(provider.name)…") { Task { await accounts.link(provider) } }
+                            .disabled(clientID.nilIfBlank == nil || accounts.signingIn != nil)
+                    }
+                } label: {
+                    Text("Redirect URI")
+                    Text(accounts.client(provider).registeredRedirectURI).textSelection(.enabled).monospaced()
+                }
+            }
+            if let error = accounts.errors[provider] {
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+            }
+        } header: {
+            Text("\(provider.name) · \(provider.detail)")
+        } footer: {
+            if accounts.linked[provider] == nil { Text(setupNote) }
+        }
+        .onAppear {
+            clientID = accounts.clientID(provider)
+            clientSecret = accounts.clientSecret(provider)
+        }
+    }
+
+    private var setupNote: String {
+        switch provider {
+        case .google:
+            "In Google Cloud Console, enable the Google Calendar API, create an OAuth client of type Desktop app, and enter its client ID and secret here. Scope: calendar.events.readonly."
+        case .microsoft:
+            "In Microsoft Entra admin center, register an app for accounts in any organization, add the platform Mobile and desktop applications with the redirect URI above, and allow public client flows. Delegated permissions: Calendars.Read, OnlineMeetings.Read, User.Read."
+        case .zoom:
+            "In the Zoom App Marketplace, create a General app (user-managed) with the redirect URI above and the scopes to read meetings (meeting:read:list_meetings, meeting:read:meeting) and your user (user:read:user). Enter its client ID and secret."
+        }
     }
 }
 
