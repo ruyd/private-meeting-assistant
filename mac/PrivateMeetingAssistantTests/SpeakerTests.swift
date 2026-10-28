@@ -190,3 +190,22 @@ struct SpeakerPipelineTests {
 private extension Array where Element == Float {
     var normalizedForTest: [Float] { SpeakerTracker.normalized(self) }
 }
+
+@MainActor
+struct SpeakerNamingTests {
+    @Test func namingSavesNamesAndClearsTheRequest() throws {
+        let store = try MeetingStore.inMemory()
+        let folder = FileManager.default.temporaryDirectory.appending(path: "naming-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let id = try store.createMeeting(title: "Naming", startedAt: Date(), folder: folder)
+        let line = try store.insertSegment(meetingID: id, source: .system, startMs: 0, endMs: 3_000, text: "Hello.", participant: 1)
+        try store.saveSpeakers(id, [MeetingSpeaker(number: 1, sampleStartMs: 0, sampleEndMs: 3_000, speechMs: 3_000)], voiceprints: [:], lines: [line: 1])
+        let library = MeetingLibrary(store: store)
+
+        library.requestNaming(id, thenSummarize: false)
+        library.nameSpeakers(id, [1: "Ana"])
+        #expect(library.namingRequest == nil)
+        #expect(try store.speakers(of: id).first?.name == "Ana")
+        #expect(try String(contentsOf: folder.appending(path: MeetingFiles.transcriptFile), encoding: .utf8).contains("Ana:** Hello."))
+    }
+}
