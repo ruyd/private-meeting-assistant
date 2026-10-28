@@ -52,7 +52,11 @@ struct MeetingView: View {
         .onChange(of: library.namingRequest?.meetingID, initial: true) { _, id in
             if id == route.meetingID { showNaming = true }
         }
-        .sheet(isPresented: $showNaming, onDismiss: load) {
+        .sheet(isPresented: $showNaming, onDismiss: {
+            // Closed without Save or Skip (Escape): counts as Skip, so a summary waiting for names starts.
+            if library.namingRequest?.meetingID == route.meetingID { library.nameSpeakers(route.meetingID, [:]) }
+            load()
+        }) {
             SpeakerNamingView(meetingID: route.meetingID) { showNaming = false }
         }
         // Picks up a summary written in the background, renames and action-item changes.
