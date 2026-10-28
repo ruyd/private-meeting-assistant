@@ -22,12 +22,13 @@ Everything else was checked in the sandboxed build: microphone and system-audio 
 ## One-time setup in App Store Connect
 
 1. **Agreements, Tax, and Banking**: accept the Paid Applications agreement and add bank and tax details. A paid app can't go on sale without them.
-2. **Apps › New App**: platform macOS, name "Private Meeting Assistant" (or another if taken), bundle ID `dev.ruy.private-meeting-assistant` (Xcode registers it on the first upload if needed), any SKU.
-3. **Pricing and Availability**: choose the price and the countries.
-4. **App Privacy**: answer "Data Not Collected". Recordings, transcripts, summaries and voice profiles stay on the Mac; calendar sign-ins go straight from the Mac to Google, Microsoft or Zoom, never to you. Link a privacy policy URL that says the same (required for every app).
-5. **App information**: category Productivity, age rating questionnaire, support URL.
-6. **Version page**: description, keywords, and screenshots (16:10, e.g. 2880×1800). `docs/images/` has a start; debug builds launched with `-sampleMeetings YES` show made-up meetings for clean screenshots.
-7. **App Review notes**, so review goes smoothly. Something like:
+2. **Register the bundle ID** first; App Store Connect only lists registered ones. In Certificates, Identifiers & Profiles › Identifiers › **+**: App IDs › App, description "Private Meeting Assistant", **Explicit** bundle ID `dev.ruy.private-meeting-assistant`, platform macOS. Leave every capability unchecked: the sandbox, microphone, network and file access come from `AppStore.entitlements`, and Apple Intelligence, Screen Recording, system audio and the Keychain need none. (A wildcard ID would rule out capabilities such as In-App Purchase or iCloud later, and the bundle ID can't change once the app ships.)
+3. **Apps › New App**: platform macOS, name "Private Meeting Assistant" (or another if taken), the bundle ID above, any SKU (such as `PMA-MAC`).
+4. **Pricing and Availability**: choose the price and the countries.
+5. **App Privacy**: answer "Data Not Collected". Recordings, transcripts, summaries and voice profiles stay on the Mac; calendar sign-ins go straight from the Mac to Google, Microsoft or Zoom, never to you. Link a privacy policy URL that says the same (required for every app).
+6. **App information**: category Productivity, age rating questionnaire, support URL.
+7. **Version page**: description, keywords, and screenshots (16:10, e.g. 2880×1800). `docs/images/` has a start; debug builds launched with `-sampleMeetings YES` show made-up meetings for clean screenshots.
+8. **App Review notes**, so review goes smoothly. Something like:
    > Records meetings and transcribes them on the Mac. Microphone: records the user. System Audio Recording: hears the other participants in calls (macOS asks). Screen Recording: only for screenshots and video of the meeting app the user picks; nothing is captured otherwise. The first launch downloads a speech model (about 570 MB) from Hugging Face; it's data for whisper.cpp, not code. Summaries use Apple Intelligence (turn it on in System Settings) or the user's own Ollama. To test without a call, choose "Microphone only", press ⌘R, speak, and press ⌘. to stop.
 
 ## Each release
