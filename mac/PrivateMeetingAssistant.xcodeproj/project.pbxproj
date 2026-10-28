@@ -11,6 +11,7 @@
 		09085CB49722534CEB8CF79C /* MeetingAccounts.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE3A9F7D4107C4DC695BA278 /* MeetingAccounts.swift */; };
 		0B3BC8053DBB9AE55C45C751 /* ScreenCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5E8ABEC47CBCFD4C206FCB8 /* ScreenCapture.swift */; };
 		10EE9BB2C5BD13AEC701C8F2 /* SummaryEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4800790429C1E27EE8437AD /* SummaryEngine.swift */; };
+		1D43E439EFEC918FB2D81458 /* WindowSnapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC859E131A34585E3FF01EBF /* WindowSnapshots.swift */; };
 		1DCE9A634FFDDDDB08790EC2 /* InputDevicesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DA321EF12BE492A470B776B /* InputDevicesTests.swift */; };
 		202C88863F097118DFE3B8C0 /* OAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08887A6410B7C8C9E5E83C8B /* OAuth.swift */; };
 		22031F8C343CF237F64B4E7C /* EchoText.swift in Sources */ = {isa = PBXBuildFile; fileRef = D895C864FC7C46F9C2606BC9 /* EchoText.swift */; };
@@ -137,6 +138,7 @@
 		D6F126C4A32389A9CB501D00 /* SummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryTests.swift; sourceTree = "<group>"; };
 		D895C864FC7C46F9C2606BC9 /* EchoText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoText.swift; sourceTree = "<group>"; };
 		DB7F196203912C9B50B34D30 /* Transcriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcriber.swift; sourceTree = "<group>"; };
+		DC859E131A34585E3FF01EBF /* WindowSnapshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSnapshots.swift; sourceTree = "<group>"; };
 		DD29A859BE892E0E71035B51 /* EchoGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoGate.swift; sourceTree = "<group>"; };
 		DE3A9F7D4107C4DC695BA278 /* MeetingAccounts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingAccounts.swift; sourceTree = "<group>"; };
 		E9FEB51C0B3025D08CC2B989 /* PrivateMeetingAssistantApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateMeetingAssistantApp.swift; sourceTree = "<group>"; };
@@ -167,6 +169,7 @@
 			children = (
 				A37371385834E310668676DB /* CaptureSelfTest.swift */,
 				C65725B6204BCE905255BCD4 /* SampleMeetings.swift */,
+				DC859E131A34585E3FF01EBF /* WindowSnapshots.swift */,
 			);
 			path = Debug;
 			sourceTree = "<group>";
@@ -504,6 +507,7 @@
 				B4600D463E8CB3BC76215BDB /* TranscriptExport.swift in Sources */,
 				5CC17E557B0F4655FBC013F0 /* TranscriptionPipeline.swift in Sources */,
 				754B98F59EF58FB096A8F3FC /* Uninstaller.swift in Sources */,
+				1D43E439EFEC918FB2D81458 /* WindowSnapshots.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -23,9 +23,11 @@ Then **Read the PNG and look at it**: a blank or missing window means the launch
 ## Claude desktop Run button
 
 `.claude/launch.json` runs `mac/scripts/preview-server.py` on port 8765: it builds and launches the
-app, and serves a page that mirrors the app's windows every second. Stopping the preview quits the
-app. The mirror needs Screen Recording permission for Claude.app; without it the page says so and
-the app still runs in its own window.
+app with `-previewSnapshots mac/build/preview`, and serves a page that mirrors the app's windows
+every second. Stopping the preview quits the app. The Debug app saves its own windows
+(`Debug/WindowSnapshots.swift`, ScreenCaptureKit with the app's own Screen Recording permission), so
+neither Claude nor Python needs that permission. Without it, the app draws the windows itself and
+translucent areas such as the sidebar come out blank.
 
 ## Notes
 
