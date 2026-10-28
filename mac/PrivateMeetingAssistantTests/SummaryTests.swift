@@ -78,17 +78,21 @@ struct LiveSummaryTests {
 struct AppleSummaryTests {
     @Test(.timeLimit(.minutes(3)))
     func summarizesWithAppleIntelligence() async throws {
-        let lines = [
-            (AudioSource.system, "Thanks for joining. The App Store build is ready for review."),
-            (.mic, "Great. Let's submit it on Monday, and I'll write the release notes."),
-            (.system, "Agreed. I'll prepare the screenshots by Friday."),
+        // Voices told apart, as in a recording: the owner should be the voice that took the task on.
+        let lines: [(AudioSource, Int?, String)] = [
+            (.system, 1, "Thanks for joining. The App Store build is ready for review."),
+            (.mic, nil, "Great. Let's submit it on Monday, and I'll write the release notes."),
+            (.system, 2, "Agreed. I'll prepare the screenshots by Friday."),
         ]
         let segments = lines.enumerated().map { i, line in
-            Segment(id: Int64(i), meetingID: 1, source: line.0, startMs: i * 5_000, endMs: i * 5_000 + 4_000, text: line.1, speaker: line.0.speaker)
+            Segment(
+                id: Int64(i), meetingID: 1, source: line.0, startMs: i * 5_000, endMs: i * 5_000 + 4_000, text: line.2,
+                participant: line.1, speaker: line.1.map { "Participant \($0)" } ?? line.0.speaker
+            )
         }
         let summary = try await Summarizer(backend: .apple).summarize(segments)
         print("apple summary: \(summary)")
         #expect(!summary.summary.isEmpty)
-        #expect(!summary.actionItems.isEmpty)
+        #expect(summary.actionItems.contains { $0.text.lowercased().contains("screenshot") && $0.owner == "Participant 2" })
     }
 }

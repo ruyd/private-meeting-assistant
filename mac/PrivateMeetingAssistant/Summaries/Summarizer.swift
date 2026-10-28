@@ -95,7 +95,7 @@ struct Summarizer {
             Produce JSON with:
             - "summary": a short paragraph (3-6 sentences) of what the meeting was about and its outcome
             - "decisions": decisions that were actually agreed (empty list if none)
-            - "actionItems": concrete follow-up tasks, each with "text" and "owner" ("Me", a name mentioned in the meeting, or "" if unclear). Keep the owner out of "text". Only include tasks someone committed to or was asked to do.
+            - "actionItems": concrete follow-up tasks, each with "text" and "owner" (the speaker label of the person who took it on or was asked to do it: "Me", a name, or "Participant N"; or "" if unclear). Keep the owner out of "text". Only include tasks someone committed to or was asked to do.
             Use only information present in the material. Do not invent names.
 
             \(material)
@@ -134,7 +134,7 @@ struct Summarizer {
     struct GeneratedItem {
         @Guide(description: "The task, without its owner")
         var text: String
-        @Guide(description: "Who owns it: \"Me\", a name used in the meeting, or empty if unclear")
+        @Guide(description: "Who owns it: the speaker label of the person who took it on or was asked to do it (\"Me\", a name, or \"Participant N\"), or empty if unclear")
         var owner: String
     }
 

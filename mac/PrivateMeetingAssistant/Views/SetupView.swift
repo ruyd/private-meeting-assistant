@@ -90,7 +90,7 @@ private struct WelcomeStep: View {
             StepHeader(
                 symbol: "waveform.and.mic",
                 title: "Welcome to Private Meeting Assistant",
-                text: "It transcribes your meetings as they happen, with you as “Me” and everyone on the call as “Them”, then writes a summary with decisions and action items."
+                text: "It transcribes your meetings as they happen, with you as “Me” and each other voice as its own participant (Participant 1, 2, 3…, named when you stop), then writes a summary with decisions and action items."
             )
             Label("Works with Zoom, Meet, Teams or any call app. No bot joins the meeting.", systemImage: "person.2")
             Label("Everything runs on this Mac. Audio and transcripts never leave it.", systemImage: "lock")
@@ -170,7 +170,7 @@ private struct SystemAudioStep: View {
             StepHeader(
                 symbol: "speaker.wave.2",
                 title: "The other participants",
-                text: "Their voices come from your call app, which this app records directly as “Them”. macOS asks to allow System Audio Recording. The test plays a short sound and checks it's heard."
+                text: "Their voices come from your call app, which this app records directly, telling each voice apart as Participant 1, 2, 3…. macOS asks to allow System Audio Recording. The test plays a short sound and checks it's heard."
             )
             HStack {
                 Button(result == .testing ? "Testing…" : "Test System Audio") { Task { await test() } }

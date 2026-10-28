@@ -225,7 +225,7 @@ private struct PermissionSettings: View {
                 )
                 permission(
                     "System audio", status: nil, allowed: nil,
-                    note: "Lets the app hear the other people in your calls. If “Them” stays silent while others talk, allow this app under System Audio Recording Only.",
+                    note: "Lets the app hear the other people in your calls. If the other participants are missing from the transcript while they talk, allow this app under System Audio Recording Only.",
                     pane: "Privacy_ScreenCapture"
                 )
                 permission(

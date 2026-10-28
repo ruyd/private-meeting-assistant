@@ -13,8 +13,8 @@ A use case for AI-assisted software development: a small, focused app, built lar
 - **Built for strict privacy requirements.** Legal and HR teams need to control exactly where sensitive conversations are stored and who can reach them. Meetings stay in a folder you choose, as ordinary files you can keep on encrypted or managed storage, back up, or delete under your own retention rules.
 - **No per-seat subscription.** Recording, transcription and AI summaries are usually paid add-ons or separate subscriptions, and across a company those can add up to thousands a year. This app uses free, open models running on Macs people already have.
 
-- **Works with any call app** (Zoom, Meet, Teams, FaceTime, Slack, WhatsApp, in person). It records your microphone as **Me** and the call's audio as **Them**, so no bot joins the meeting. Pick one app to listen to, all system audio, or the microphone only.
-- **Tells speakers apart.** Each voice gets its own label (Participant 1, 2…) instead of one "Them", and in-person recordings tell everyone in the room apart. When the recording stops, listen to a short clip of each voice and name it (or pick from the calendar's invitees); the names carry into the transcript, search and summary. A small speaker model on the Mac does this; a few seconds of each voice are kept in the meeting's `voices/` folder.
+- **Works with any call app** (Zoom, Meet, Teams, FaceTime, Slack, WhatsApp, in person). It records your microphone as **Me** and the call's audio directly, so no bot joins the meeting. Pick one app to listen to, all system audio, or the microphone only.
+- **Tells speakers apart.** Each voice on the call gets its own label (Participant 1, 2…), and in-person recordings tell everyone in the room apart. When the recording stops, listen to a short clip of each voice and name it (or pick from the calendar's invitees); the names carry into the transcript, search and summary. A small speaker model on the Mac does this; a few seconds of each voice are kept in the meeting's `voices/` folder.
 - **Live transcription** with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) on the Mac's GPU (Metal). Models load in well under a second.
 - **No echo without headphones.** When your speakers play the other side, your mic hears them too. Echo cancellation (SpeexDSP) plus an echo gate keeps their words out of "Me".
 - **Summaries, decisions and action items** from a local model in [Ollama](https://ollama.com): your own Ollama if it's running, or a private copy the app downloads on request. Cloud models are never used.
@@ -90,20 +90,22 @@ Archives, signs, notarizes and staples the app, then wraps it in a signed and no
 
 ```
 microphone ──> echo canceller ──> echo gate ──┐
-  (Me)            (SpeexDSP)                  ├─> voice detection ─> whisper.cpp ─> transcript.md + search index
-call audio ───────────────────────────────────┘    (per source)        (Metal)
-  (Them, Core Audio process tap)
+  (Me)            (SpeexDSP)                  ├─> voice detection ─> whisper.cpp ─> speaker model ─> transcript.md + search index
+call audio ───────────────────────────────────┘    (per source)        (Metal)        (Participant 1, 2…)
+  (Core Audio process tap)
 
-stop ─> Ollama summary (long meetings in parts) ─> summary.md + search index
+stop ─> name the voices ─> summary (Apple Intelligence or Ollama, long meetings in parts) ─> summary.md + search index
 ```
 
 | Path (`mac/PrivateMeetingAssistant/`) | What it does |
 |---|---|
 | `Audio/` | Microphone capture, system audio through a Core Audio process tap, device picking, levels |
 | `Transcription/` | Voice detection, echo cancellation and gate, whisper.cpp transcriber, speech model downloads, the recorder |
-| `Summaries/` | Ollama engine (yours or downloaded), summarizer with structured output |
+| `Speakers/` | Voiceprints (WeSpeaker) and telling voices apart |
+| `Summaries/` | Summary engines (Apple Intelligence, your Ollama, a downloaded Ollama), summarizer with structured output |
+| `Integrations/` | Google, Microsoft 365 and Zoom sign-in, upcoming meetings and invitees |
 | `Storage/` | Meeting folders and Markdown, the SQLite index with full-text search, uninstall |
-| `Screen/` | Screenshots of the recorded app's window |
+| `Screen/` | Screenshots and video of the recorded app's window |
 | `Views/` | SwiftUI: meeting list, recording panel and live view, meeting page, setup, settings |
 | `Debug/` | Command-line self-tests and sample meetings (debug builds only) |
 
@@ -111,8 +113,9 @@ App data (the index, models, a downloaded Ollama) lives in `~/Library/Applicatio
 
 ## Known limitations
 
-- Speakers are split into **Me** and **Them** by audio source, so several remote participants all appear as "Them".
-- Not on the Mac App Store yet: the app would first need App Sandbox changes (the meetings folder, the downloaded Ollama, uninstall).
+- Voices are told apart within a meeting but not remembered across meetings: each meeting starts again from Participant 1.
+- Two people talking over each other in one stretch of audio go to whichever voice dominates it.
+- The Mac App Store build (see `mac/APPSTORE.md`) can't download Ollama; it summarizes with Apple Intelligence or your own Ollama.
 
 ## The Tauri prototype
 
