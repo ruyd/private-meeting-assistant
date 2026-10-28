@@ -44,9 +44,12 @@ final class SummaryEngine {
     nonisolated static var binary: URL { folder.appending(path: version).appending(path: "ollama") }
     nonisolated static var modelsFolder: URL { folder.appending(path: "models", directoryHint: .isDirectory) }
 
-    /// The model to use when nothing's chosen: the larger one needs 16 GB of memory to run well.
+    /// The model setup downloads and uses when nothing's chosen, by how much memory this Mac has.
+    /// Running, the 12B model takes about 11 GB (its 7.7 GB of weights plus room for the transcript),
+    /// all of it memory the graphics chip locks in place; on a 16 GB Mac that leaves too little for
+    /// macOS and other apps, and the whole Mac stalls. The 4B model takes about 5 GB.
     nonisolated static var recommendedModel: (name: String, bytes: Int64) {
-        ProcessInfo.processInfo.physicalMemory >= 16 << 30 ? ("gemma4:12b", 7_700_000_000) : ("gemma3:4b", 3_300_000_000)
+        ProcessInfo.processInfo.physicalMemory >= 24 << 30 ? ("gemma4:12b", 7_700_000_000) : ("gemma3:4b", 3_300_000_000)
     }
 
     private(set) var yours = Yours()

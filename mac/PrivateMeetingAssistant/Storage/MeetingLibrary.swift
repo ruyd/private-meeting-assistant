@@ -14,6 +14,9 @@ final class MeetingLibrary {
     @ObservationIgnored let store: MeetingStore?
     private(set) var meetings: [Meeting] = []
     private(set) var error: String?
+    /// Summaries being written right now. While any are, the speech model is unloaded to leave the
+    /// summary model the memory (see ContentView).
+    private(set) var summariesRunning = 0
 
     init(store: MeetingStore? = nil) {
         do {
@@ -95,6 +98,8 @@ final class MeetingLibrary {
     /// and summary.md. Progress and errors show up as the meeting's summary status.
     func summarize(_ id: Int64) async {
         guard let store else { return }
+        summariesRunning += 1
+        defer { summariesRunning -= 1 }
         try? store.setSummaryStatus(id, "running")
         refresh()
         do {

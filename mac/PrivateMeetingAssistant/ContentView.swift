@@ -56,9 +56,15 @@ struct ContentView: View {
         .environment(MeetingLibrary.shared)
         .onAppear { if !setupCompleted { showSetup = true } }
         // Loads the chosen speech model in the background (again when it changes or finishes
-        // downloading), so Start Recording begins right away.
-        .task(id: "\(modelID) \(ModelStore.shared.downloaded.contains(modelID))") {
-            await recorder.preload(SpeechModel.find(modelID) ?? .recommended)
+        // downloading), so Start Recording begins right away. While a summary is being written the
+        // speech model is freed instead: both together can use more memory than a 16 GB Mac has.
+        // (An automatic summary starts while the recording is still finishing, so idling counts too.)
+        .task(id: "\(modelID) \(ModelStore.shared.downloaded.contains(modelID)) \(MeetingLibrary.shared.summariesRunning > 0) \(recorder.phase == .idle)") {
+            if MeetingLibrary.shared.summariesRunning > 0 {
+                recorder.unloadModel()
+            } else {
+                await recorder.preload(SpeechModel.find(modelID) ?? .recommended)
+            }
         }
         .sheet(isPresented: $showSetup) {
             SetupView {

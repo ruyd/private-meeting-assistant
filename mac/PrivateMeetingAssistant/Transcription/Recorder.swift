@@ -119,6 +119,13 @@ final class Recorder {
         _ = try? await transcriber(for: model)
     }
 
+    /// Frees the speech model's memory (until the next `preload` or recording). Only while idle: a
+    /// recording keeps its model.
+    func unloadModel() {
+        guard phase == .idle else { return }
+        transcriber = nil
+    }
+
     /// The loaded model, loading it (or joining a load already under way) if needed.
     private func transcriber(for model: SpeechModel) async throws -> Transcriber {
         if let transcriber, transcriber.model == model { return transcriber }
