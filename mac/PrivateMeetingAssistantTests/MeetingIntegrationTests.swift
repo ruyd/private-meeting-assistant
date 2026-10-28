@@ -111,6 +111,23 @@ struct MeetingServiceParsingTests {
     }
 }
 
+struct OAuthAppConfigTests {
+    @Test func administratorOverrideBringsItsOwnSecret() throws {
+        let suite = "oauth-config-test-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // Nothing built into the test host's Info.plist and no override: not offered.
+        #expect(MeetingAccounts.client(.zoom, defaults: defaults).clientID.isEmpty)
+
+        defaults.set("company-id", forKey: "oauthClientID.zoom")
+        let overridden = MeetingAccounts.client(.zoom, defaults: defaults)
+        #expect(overridden.clientID == "company-id" && overridden.clientSecret == nil)
+        defaults.set("company-secret", forKey: "oauthClientSecret.zoom")
+        #expect(MeetingAccounts.client(.zoom, defaults: defaults).clientSecret == "company-secret")
+    }
+}
+
 struct MeetingDetailsStorageTests {
     @Test func detailsAreSavedSearchableAndWritten() throws {
         let store = try MeetingStore.inMemory()

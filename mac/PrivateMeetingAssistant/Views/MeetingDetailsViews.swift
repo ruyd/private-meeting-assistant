@@ -12,6 +12,11 @@ struct UpcomingMeetingsSection: View {
     @State private var completing: String?
 
     var body: some View {
+        // Nothing to offer when this build has no OAuth apps and no account is signed in.
+        if !accounts.linked.isEmpty || !accounts.available.isEmpty { content }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Meeting").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
@@ -22,18 +27,18 @@ struct UpcomingMeetingsSection: View {
                     Button("Refresh", systemImage: "arrow.clockwise") { Task { await accounts.refreshUpcoming() } }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
-                        .help("Reload upcoming meetings from your linked accounts")
+                        .help("Reload upcoming meetings from your accounts")
                 }
             }
 
             if accounts.linked.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "calendar.badge.plus").foregroundStyle(.secondary)
-                    Text("Link Google, Microsoft 365 or Zoom to name recordings and list participants from your meetings.")
+                    Text("Sign in with \(availableNames) to pick a meeting and see who's invited.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 8)
-                    SettingsLink { Text("Link Accounts…") }
+                    SettingsLink { Text("Sign In…") }
                         .controlSize(.small)
                 }
                 .padding(12)
@@ -70,6 +75,12 @@ struct UpcomingMeetingsSection: View {
                 try? await Task.sleep(for: .seconds(300))
             }
         }
+    }
+
+    /// "Google, Microsoft 365 or Zoom", for the providers this build offers.
+    private var availableNames: String {
+        let names = accounts.available.map(\.name)
+        return names.count > 1 ? names.dropLast().joined(separator: ", ") + " or " + names.last! : names.first ?? ""
     }
 
     private var lookupField: some View {

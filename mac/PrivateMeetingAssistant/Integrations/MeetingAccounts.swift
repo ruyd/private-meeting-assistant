@@ -31,25 +31,33 @@ final class MeetingAccounts {
         }
     }
 
-    // MARK: Settings
+    // MARK: OAuth apps
 
-    static func clientIDKey(_ provider: MeetingProvider) -> String { "oauthClientID.\(provider.rawValue)" }
-    private static func secretKey(_ provider: MeetingProvider) -> String { "clientSecret.\(provider.rawValue)" }
     private static func tokensKey(_ provider: MeetingProvider) -> String { "tokens.\(provider.rawValue)" }
 
-    func clientID(_ provider: MeetingProvider) -> String {
-        UserDefaults.standard.string(forKey: Self.clientIDKey(provider))?.nilIfBlank ?? ""
+    /// The OAuth app the person signs in through: the one built into the app (Config/OAuth.xcconfig),
+    /// unless an administrator set another in preferences (`oauthClientID.<provider>`,
+    /// `oauthClientSecret.<provider>`, e.g. by MDM), for companies that register their own.
+    nonisolated static func client(_ provider: MeetingProvider, bundle: Bundle = .main, defaults: UserDefaults = .standard) -> OAuthClient {
+        let name = switch provider {
+        case .google: "Google"
+        case .microsoft: "Microsoft"
+        case .zoom: "Zoom"
+        }
+        func value(_ defaultsKey: String, _ plistKey: String) -> String? {
+            defaults.string(forKey: defaultsKey)?.nilIfBlank ?? (bundle.object(forInfoDictionaryKey: plistKey) as? String)?.nilIfBlank
+        }
+        let overridden = defaults.string(forKey: "oauthClientID.\(provider.rawValue)")?.nilIfBlank != nil
+        let clientID = value("oauthClientID.\(provider.rawValue)", "PMA\(name)ClientID") ?? ""
+        // A secret belongs to its client ID: never pair an administrator's ID with the built-in secret.
+        let secret = overridden
+            ? defaults.string(forKey: "oauthClientSecret.\(provider.rawValue)")?.nilIfBlank
+            : (bundle.object(forInfoDictionaryKey: "PMA\(name)ClientSecret") as? String)?.nilIfBlank
+        return OAuthClient(provider: provider, clientID: clientID, clientSecret: secret)
     }
 
-    func clientSecret(_ provider: MeetingProvider) -> String { Keychain.string(Self.secretKey(provider)) ?? "" }
-
-    func setClientSecret(_ secret: String, for provider: MeetingProvider) {
-        Keychain.setString(secret, for: Self.secretKey(provider))
-    }
-
-    func client(_ provider: MeetingProvider) -> OAuthClient {
-        OAuthClient(provider: provider, clientID: clientID(provider), clientSecret: clientSecret(provider).nilIfBlank)
-    }
+    /// Providers this build (or the administrator) has an OAuth app for; the others aren't offered.
+    var available: [MeetingProvider] { MeetingProvider.allCases.filter { !Self.client($0).clientID.isEmpty } }
 
     // MARK: Linking
 
@@ -58,7 +66,7 @@ final class MeetingAccounts {
         errors[provider] = nil
         defer { signingIn = nil }
         do {
-            var tokens = try await client(provider).signIn()
+            var tokens = try await Self.client(provider).signIn()
             self.tokens[provider] = tokens
             tokens.account = try? await Self.service(provider).accountEmail(api(provider))
             self.tokens[provider] = tokens
@@ -130,7 +138,7 @@ final class MeetingAccounts {
         var errorDescription: String? {
             switch self {
             case .notALink: "That isn't a Meet, Zoom or Teams link or meeting ID."
-            case .noAccount(let platform): "Link a \(platform.map(Self.provider).map(\.name) ?? "Google, Microsoft or Zoom") account in Settings › Accounts to look up \(platform?.name ?? "this") meeting."
+            case .noAccount(let platform): "Sign in with \(platform.map(Self.provider).map(\.name) ?? "Google, Microsoft 365 or Zoom") in Settings › Accounts to look up \(platform?.name ?? "this") meeting."
             case .notFound: "No meeting with that link or ID was found in your linked accounts."
             }
         }
@@ -223,7 +231,7 @@ final class MeetingAccounts {
         guard let current = tokens[provider] else { throw LookupFailure.noAccount(nil) }
         if !force, !current.isExpired { return current.accessToken }
         if let running = refreshing[provider] { return try await running.value.accessToken }
-        let client = client(provider)
+        let client = Self.client(provider)
         let task = Task { try await client.refresh(current) }
         refreshing[provider] = task
         defer { refreshing[provider] = nil }

@@ -103,6 +103,7 @@
 		1598FA704419441E27938234 /* jfk.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = jfk.wav; sourceTree = "<group>"; };
 		1DA321EF12BE492A470B776B /* InputDevicesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputDevicesTests.swift; sourceTree = "<group>"; };
 		27A66EACCE136FEBDC2046FF /* InputDevices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputDevices.swift; sourceTree = "<group>"; };
+		28CDAA5D16AD1F9B9BCADEA0 /* OAuth.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = OAuth.xcconfig; sourceTree = "<group>"; };
 		29256E26059FDFA19E9CE370 /* EchoTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoTextTests.swift; sourceTree = "<group>"; };
 		3F470A5195B054938EB3C0F2 /* MonoResamplerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonoResamplerTests.swift; sourceTree = "<group>"; };
 		4588E28E677EEECE202BE210 /* MeetingDetailsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingDetailsViews.swift; sourceTree = "<group>"; };
@@ -249,6 +250,14 @@
 			path = Storage;
 			sourceTree = "<group>";
 		};
+		7CE6F9447DF74B96AC035D86 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				28CDAA5D16AD1F9B9BCADEA0 /* OAuth.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
 		8245CBDF3F78C5179251E9B9 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -300,6 +309,7 @@
 		C6421EDE8DAA50092092335F = {
 			isa = PBXGroup;
 			children = (
+				7CE6F9447DF74B96AC035D86 /* Config */,
 				3ABB95F244D5D881BAD23E36 /* Packages */,
 				848761AED89531BF022CC0AD /* PrivateMeetingAssistant */,
 				F97A9D950B13E6896A0331E3 /* PrivateMeetingAssistantTests */,
@@ -524,6 +534,7 @@
 /* Begin XCBuildConfiguration section */
 		26D66B2B920F45D22AFBBBCA /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 28CDAA5D16AD1F9B9BCADEA0 /* OAuth.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PrivateMeetingAssistant/PrivateMeetingAssistant.entitlements;
@@ -713,6 +724,7 @@
 		};
 		FDDA51BB3B43C394AA559BA7 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 28CDAA5D16AD1F9B9BCADEA0 /* OAuth.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PrivateMeetingAssistant/PrivateMeetingAssistant.entitlements;

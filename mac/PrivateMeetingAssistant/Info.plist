@@ -28,5 +28,15 @@
 	<string>Private Meeting Assistant saves meetings in the folder you chose, which is in your Documents folder.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Private Meeting Assistant transcribes what you say in meetings. Audio never leaves this Mac.</string>
+	<key>PMAGoogleClientID</key>
+	<string>$(PMA_GOOGLE_CLIENT_ID)</string>
+	<key>PMAGoogleClientSecret</key>
+	<string>$(PMA_GOOGLE_CLIENT_SECRET)</string>
+	<key>PMAMicrosoftClientID</key>
+	<string>$(PMA_MICROSOFT_CLIENT_ID)</string>
+	<key>PMAZoomClientID</key>
+	<string>$(PMA_ZOOM_CLIENT_ID)</string>
+	<key>PMAZoomClientSecret</key>
+	<string>$(PMA_ZOOM_CLIENT_SECRET)</string>
 </dict>
 </plist>

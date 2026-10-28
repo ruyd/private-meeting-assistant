@@ -1,0 +1,15 @@
+// The OAuth apps that let people sign in with their Google, Microsoft 365 and Zoom accounts to pick
+// meetings and see who's invited. Registered once by whoever ships the app (see mac/OAUTH.md); end
+// users only ever see the service's own sign-in page.
+//
+// Put the real values in OAuth.local.xcconfig next to this file (not committed), e.g.
+//   PMA_GOOGLE_CLIENT_ID = 1234-abc.apps.googleusercontent.com
+// A provider left empty isn't offered in the app.
+
+PMA_GOOGLE_CLIENT_ID =
+PMA_GOOGLE_CLIENT_SECRET =
+PMA_MICROSOFT_CLIENT_ID =
+PMA_ZOOM_CLIENT_ID =
+PMA_ZOOM_CLIENT_SECRET =
+
+#include? "OAuth.local.xcconfig"

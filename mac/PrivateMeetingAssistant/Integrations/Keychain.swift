@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// Linked accounts' tokens and OAuth client secrets, in the login Keychain rather than in
+/// Linked accounts' sign-in tokens, in the login Keychain rather than in
 /// preferences, so they're encrypted at rest and only this app reads them.
 enum Keychain {
     private static let service = "dev.ruy.private-meeting-assistant.accounts"
@@ -31,14 +31,6 @@ enum Keychain {
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(add as CFDictionary, nil)
-    }
-
-    static func string(_ account: String) -> String? {
-        data(account).map { String(decoding: $0, as: UTF8.self) }
-    }
-
-    static func setString(_ value: String?, for account: String) {
-        set(value?.nilIfBlank.map { Data($0.utf8) }, for: account)
     }
 
     static func decode<T: Decodable>(_ type: T.Type, _ account: String) -> T? {

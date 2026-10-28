@@ -8,3 +8,4 @@ mac/build/
 .build/
 mac/Vendor/whisper.framework/
 mac/Vendor/.whisper-*
+mac/Config/OAuth.local.xcconfig

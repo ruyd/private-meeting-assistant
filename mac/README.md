@@ -16,6 +16,10 @@ Transcription uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (Metal
 
 Every build, Debug included, is signed with the team's **Developer ID Application** certificate and uses Hardened Runtime. A stable signature means macOS keeps the Microphone and System Audio permissions across rebuilds.
 
+## Calendar sign-in
+
+Signing in with Google, Microsoft 365 and Zoom uses OAuth apps registered once by whoever ships the app, with their client IDs built in from `Config/OAuth.local.xcconfig`. See [OAUTH.md](OAUTH.md).
+
 ## Release
 
 ```bash

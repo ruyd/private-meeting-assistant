@@ -30,9 +30,18 @@ targets:
       - package: SpeexDSP
       - package: GRDB
         product: GRDB
+    configFiles:
+      # OAuth client IDs for signing in to Google, Microsoft and Zoom (see OAUTH.md).
+      Debug: Config/OAuth.xcconfig
+      Release: Config/OAuth.xcconfig
     info:
       path: PrivateMeetingAssistant/Info.plist
       properties:
+        PMAGoogleClientID: $(PMA_GOOGLE_CLIENT_ID)
+        PMAGoogleClientSecret: $(PMA_GOOGLE_CLIENT_SECRET)
+        PMAMicrosoftClientID: $(PMA_MICROSOFT_CLIENT_ID)
+        PMAZoomClientID: $(PMA_ZOOM_CLIENT_ID)
+        PMAZoomClientSecret: $(PMA_ZOOM_CLIENT_SECRET)
         CFBundleDisplayName: Private Meeting Assistant
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
