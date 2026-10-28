@@ -1,5 +1,12 @@
 # Generates PrivateMeetingAssistant.xcodeproj. After editing, run: xcodegen generate
 name: PrivateMeetingAssistant
+# Debug and Release are the Developer ID builds (notarized DMG, scripts/release.sh). AppStore is the
+# sandboxed Mac App Store build (scripts/release-appstore.sh): no downloaded Ollama, meetings folder
+# kept with a bookmark, signed for the App Store.
+configs:
+  Debug: debug
+  Release: release
+  AppStore: release
 options:
   # Downloads the pinned whisper.cpp framework into Vendor/ if it isn't there yet.
   preGenCommand: scripts/fetch-whisper.sh
@@ -49,11 +56,9 @@ targets:
         NSMicrophoneUsageDescription: Private Meeting Assistant transcribes what you say in meetings. Audio never leaves this Mac.
         NSDocumentsFolderUsageDescription: Private Meeting Assistant saves meetings in the folder you chose, which is in your Documents folder.
         NSAudioCaptureUsageDescription: Private Meeting Assistant transcribes the other participants in your calls. Audio never leaves this Mac.
-    entitlements:
-      path: PrivateMeetingAssistant/PrivateMeetingAssistant.entitlements
-      properties:
-        # Hardened Runtime blocks microphone input without this (it fails silently).
-        com.apple.security.device.audio-input: true
+        NSHumanReadableCopyright: Copyright © 2026 Ruy Delgado. MIT License.
+        # Only standard HTTPS: no export compliance documents needed.
+        ITSAppUsesNonExemptEncryption: false
     settings:
       base:
         PRODUCT_NAME: Private Meeting Assistant
@@ -64,6 +69,16 @@ targets:
         # One stable identity for every build keeps macOS privacy permissions across rebuilds.
         CODE_SIGN_IDENTITY: Developer ID Application
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Developer ID: Hardened Runtime only (the microphone entitlement, without which it blocks
+        # microphone input silently).
+        CODE_SIGN_ENTITLEMENTS: PrivateMeetingAssistant/PrivateMeetingAssistant.entitlements
+      configs:
+        AppStore:
+          # The App Sandbox and what it lets the app reach.
+          CODE_SIGN_ENTITLEMENTS: PrivateMeetingAssistant/AppStore.entitlements
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: APPSTORE
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: Apple Development
     scheme:
       testTargets: [PrivateMeetingAssistantTests]
   PrivateMeetingAssistantTests:

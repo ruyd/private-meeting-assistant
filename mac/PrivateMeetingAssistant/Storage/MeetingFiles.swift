@@ -14,14 +14,50 @@ enum MeetingFiles {
     static let audioFile = "audio.m4a"
     static let videosFolder = "video"
 
-    /// The folder chosen in setup or Settings; nil until chosen.
+    /// The folder chosen in setup or Settings; nil until chosen. In the App Store build (sandboxed)
+    /// it's only available while the app holds access to it, which it gets back at launch from a
+    /// bookmark saved when the folder was chosen.
     static var root: URL? {
-        get { UserDefaults.standard.string(forKey: rootKey).map { URL(fileURLWithPath: $0, isDirectory: true) } }
-        set { UserDefaults.standard.set(newValue?.path, forKey: rootKey) }
+        get {
+            #if APPSTORE
+            _ = FolderAccess.restored
+            guard let path = UserDefaults.standard.string(forKey: rootKey), FolderAccess.isGranted(path) else { return nil }
+            #else
+            guard let path = UserDefaults.standard.string(forKey: rootKey) else { return nil }
+            #endif
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        set {
+            #if APPSTORE
+            if let newValue { FolderAccess.remember(newValue) }
+            #endif
+            UserDefaults.standard.set(newValue?.path, forKey: rootKey)
+        }
+    }
+
+    /// The person's home folder. In the sandbox, `URL.homeDirectory` is the app's own container.
+    static var realHome: URL {
+        if let dir = getpwuid(getuid())?.pointee.pw_dir {
+            return URL(fileURLWithPath: String(cString: dir), isDirectory: true)
+        }
+        return URL.homeDirectory
+    }
+
+    /// A path for display, with the home folder as "~".
+    static func displayPath(_ url: URL) -> String {
+        url.path.replacingOccurrences(of: realHome.path, with: "~")
     }
 
     /// Suggested in setup: ~/Meetings. Unlike Documents or Desktop, macOS doesn't ask permission for it.
-    static var suggestedRoot: URL { URL.homeDirectory.appending(path: "Meetings", directoryHint: .isDirectory) }
+    /// The App Store build can't create it unasked; there, the folder is chosen in an open panel.
+    static var suggestedRoot: URL { realHome.appending(path: "Meetings", directoryHint: .isDirectory) }
+
+    /// Whether the suggested folder can be used without asking (outside the sandbox).
+    #if APPSTORE
+    static let canUseSuggestedRoot = false
+    #else
+    static let canUseSuggestedRoot = true
+    #endif
 
     /// "Pricing sync - 2026-10-28 14.30": readable, sorts by subject, and the time tells apart two
     /// meetings with the same subject on one day.
@@ -235,3 +271,41 @@ struct MeetingScreenshot: Identifiable, Hashable, Sendable {
 
     var id: URL { url }
 }
+
+#if APPSTORE
+/// Access to the meetings folders chosen in the sandboxed App Store build: a security-scoped bookmark
+/// per folder ever chosen (older meetings stay where they were when the folder changes), resolved at
+/// launch so their files can be read and written.
+enum FolderAccess {
+    private static let key = "meetingsFolderBookmarks"
+    nonisolated(unsafe) private static var granted: Set<String> = []
+
+    /// Resolves the saved bookmarks once, at first use.
+    static let restored: Void = {
+        var refreshed: [Data] = []
+        for data in UserDefaults.standard.array(forKey: key) as? [Data] ?? [] {
+            var stale = false
+            guard let url = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, bookmarkDataIsStale: &stale),
+                  url.startAccessingSecurityScopedResource()
+            else { continue }
+            granted.insert(url.standardizedFileURL.path)
+            refreshed.append(stale ? (try? url.bookmarkData(options: .withSecurityScope)) ?? data : data)
+        }
+        UserDefaults.standard.set(refreshed, forKey: key)
+    }()
+
+    static func isGranted(_ path: String) -> Bool {
+        let path = URL(fileURLWithPath: path).standardizedFileURL.path
+        return granted.contains { path == $0 || path.hasPrefix($0 + "/") }
+    }
+
+    /// Keeps access to a folder chosen in an open panel (or inside the app's own container).
+    static func remember(_ url: URL) {
+        _ = restored
+        guard !isGranted(url.path), let data = try? url.bookmarkData(options: .withSecurityScope) else { return }
+        _ = url.startAccessingSecurityScopedResource()
+        granted.insert(url.standardizedFileURL.path)
+        UserDefaults.standard.set((UserDefaults.standard.array(forKey: key) as? [Data] ?? []) + [data], forKey: key)
+    }
+}
+#endif

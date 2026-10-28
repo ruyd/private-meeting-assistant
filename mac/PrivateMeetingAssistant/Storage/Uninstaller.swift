@@ -20,7 +20,7 @@ enum Uninstaller {
             Item(url: URL.cachesDirectory.appending(path: "dev.ruy.private-meeting-assistant"), label: "Caches"),
         ]
         if !keepMeetings, let root = MeetingFiles.root {
-            items.append(Item(url: root, label: "Your meetings folder (\(root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")))"))
+            items.append(Item(url: root, label: "Your meetings folder (\(MeetingFiles.displayPath(root)))"))
         }
         items.append(Item(url: Bundle.main.bundleURL, label: "The app"))
         return items.filter { FileManager.default.fileExists(atPath: $0.url.path) }
@@ -33,12 +33,14 @@ enum Uninstaller {
         }
         if let id = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: id)
+            #if !APPSTORE
             // Forget the Microphone and System Audio Recording permissions granted to this app.
             let reset = Process()
             reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
             reset.arguments = ["reset", "All", id]
             try? reset.run()
             reset.waitUntilExit()
+            #endif
         }
         NSApp.terminate(nil)
     }

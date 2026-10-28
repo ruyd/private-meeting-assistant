@@ -18,6 +18,7 @@
 		22031F8C343CF237F64B4E7C /* EchoText.swift in Sources */ = {isa = PBXBuildFile; fileRef = D895C864FC7C46F9C2606BC9 /* EchoText.swift */; };
 		25B805AC215D5DA921BFEBA6 /* MeetingFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03C7B862C67EFD1052E415A /* MeetingFiles.swift */; };
 		2666D4F72D9EA14CBF61236A /* MeetingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00BCD117CB8416BA78F32FCE /* MeetingView.swift */; };
+		267DFFF8C1B696BE4C768BDB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0BA04D5CA5FABC0C988D919A /* PrivacyInfo.xcprivacy */; };
 		285295651560B99E07F90B95 /* MeetingDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDB98E1718CE305979E818FF /* MeetingDetails.swift */; };
 		2B8ED7650084D8461F6383E8 /* AudioChunk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD7B8E7779BDD8FD8787BD4 /* AudioChunk.swift */; };
 		311E17BAEF1BD6290260A72B /* Summarizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B948B62DE8CEC68EF455431A /* Summarizer.swift */; };
@@ -104,6 +105,7 @@
 		08887A6410B7C8C9E5E83C8B /* OAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuth.swift; sourceTree = "<group>"; };
 		09759623E7C9D20651A123F1 /* TranscriptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionTests.swift; sourceTree = "<group>"; };
 		0A1E9C26D9D4A1CB9E1FB8FF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		0BA04D5CA5FABC0C988D919A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		0CD30B7F8D58AF4288137E3A /* MeetingServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingServices.swift; sourceTree = "<group>"; };
 		0EE9081270BBF1F38FC4101F /* SpeexDSP */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SpeexDSP; path = Vendor/SpeexDSP; sourceTree = SOURCE_ROOT; };
 		0FB686A1A90CFE8AA6AB110B /* Voiceprints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Voiceprints.swift; sourceTree = "<group>"; };
@@ -122,6 +124,7 @@
 		483CB24095244760F11A3D7F /* CaptureSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureSession.swift; sourceTree = "<group>"; };
 		4A7EE041B1DB0BA18A0FF92D /* MeetingStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingStoreTests.swift; sourceTree = "<group>"; };
 		529A4DC17FF102AFAA59F165 /* PrivateMeetingAssistant.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PrivateMeetingAssistant.entitlements; sourceTree = "<group>"; };
+		55C374E01F05CA31DDA87BA7 /* AppStore.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppStore.entitlements; sourceTree = "<group>"; };
 		5680C2BB6A5C99B07BC74A5F /* whisper.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = whisper.framework; path = Vendor/whisper.framework; sourceTree = "<group>"; };
 		60B20371B9673CAE557255D6 /* AudioPlayerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerBar.swift; sourceTree = "<group>"; };
 		688E5A1E7ABF8643CFAE06E2 /* Recorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder.swift; sourceTree = "<group>"; };
@@ -286,9 +289,11 @@
 		848761AED89531BF022CC0AD /* PrivateMeetingAssistant */ = {
 			isa = PBXGroup;
 			children = (
+				55C374E01F05CA31DDA87BA7 /* AppStore.entitlements */,
 				0A1E9C26D9D4A1CB9E1FB8FF /* Assets.xcassets */,
 				F6B2AB43F3BA84182522424C /* ContentView.swift */,
 				FCE805EB8F68B4F8D2464E5A /* Info.plist */,
+				0BA04D5CA5FABC0C988D919A /* PrivacyInfo.xcprivacy */,
 				529A4DC17FF102AFAA59F165 /* PrivateMeetingAssistant.entitlements */,
 				E9FEB51C0B3025D08CC2B989 /* PrivateMeetingAssistantApp.swift */,
 				2BA3B7A2F30CF8C3A7C1792F /* Audio */,
@@ -441,7 +446,6 @@
 					};
 					DF4B6D0D08F6AD850507C315 = {
 						DevelopmentTeam = 7X36HVTXYB;
-						ProvisioningStyle = Manual;
 					};
 				};
 			};
@@ -483,6 +487,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C04F32755095E64405F59499 /* Assets.xcassets in Resources */,
+				267DFFF8C1B696BE4C768BDB /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -572,6 +577,65 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		179D88B52E7F288F220970C1 /* AppStore */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 7X36HVTXYB;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = AppStore;
+		};
 		26D66B2B920F45D22AFBBBCA /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 28CDAA5D16AD1F9B9BCADEA0 /* OAuth.xcconfig */;
@@ -762,6 +826,51 @@
 			};
 			name = Debug;
 		};
+		BE4E00D9E973FADB5CDEC85F /* AppStore */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Vendor";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.ruy.private-meeting-assistant.tests";
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Private Meeting Assistant.app/Contents/MacOS/Private Meeting Assistant";
+			};
+			name = AppStore;
+		};
+		DCAC18E3506738AC730EE859 /* AppStore */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = PrivateMeetingAssistant/AppStore.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Vendor\"",
+				);
+				INFOPLIST_FILE = PrivateMeetingAssistant/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.ruy.private-meeting-assistant";
+				PRODUCT_NAME = "Private Meeting Assistant";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = APPSTORE;
+			};
+			name = AppStore;
+		};
 		FDDA51BB3B43C394AA559BA7 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 28CDAA5D16AD1F9B9BCADEA0 /* OAuth.xcconfig */;
@@ -793,29 +902,32 @@
 		16C4536664599732C05493B2 /* Build configuration list for PBXProject "PrivateMeetingAssistant" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
+				179D88B52E7F288F220970C1 /* AppStore */,
 				B341E40CC155E1EE09120600 /* Debug */,
 				7835EB7216E9868ACCD89CD6 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
+			defaultConfigurationName = AppStore;
 		};
 		4C445EA946857D4B74DADAC9 /* Build configuration list for PBXNativeTarget "PrivateMeetingAssistantTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
+				BE4E00D9E973FADB5CDEC85F /* AppStore */,
 				72D912E53389B8C3CE474A94 /* Debug */,
 				38324224460F031E05ED1FE3 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
+			defaultConfigurationName = AppStore;
 		};
 		C6E9E6E58BA0CB26EBE9836F /* Build configuration list for PBXNativeTarget "PrivateMeetingAssistant" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
+				DCAC18E3506738AC730EE859 /* AppStore */,
 				FDDA51BB3B43C394AA559BA7 /* Debug */,
 				26D66B2B920F45D22AFBBBCA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
+			defaultConfigurationName = AppStore;
 		};
 /* End XCConfigurationList section */
 

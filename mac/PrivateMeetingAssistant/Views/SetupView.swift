@@ -44,7 +44,7 @@ struct SetupView: View {
                     Button("Done") { done() }.keyboardShortcut(.defaultAction)
                 } else {
                     Button(step == .welcome ? "Get Started" : "Continue") {
-                        if step == .folder, MeetingFiles.root == nil { useSuggestedFolder() }
+                        if step == .folder, MeetingFiles.root == nil, !useSuggestedFolder() { return }
                         step = Step(rawValue: step.rawValue + 1)!
                     }
                     .keyboardShortcut(.defaultAction)
@@ -55,9 +55,17 @@ struct SetupView: View {
         .frame(width: 560, height: 460)
     }
 
-    private func useSuggestedFolder() {
+    /// Uses ~/Meetings, or in the App Store build (which can only use folders chosen in an open
+    /// panel) asks for one. False if none was chosen.
+    private func useSuggestedFolder() -> Bool {
+        guard MeetingFiles.canUseSuggestedRoot else {
+            guard let url = chooseMeetingsFolder() else { return false }
+            MeetingFiles.root = url
+            return true
+        }
         try? FileManager.default.createDirectory(at: MeetingFiles.suggestedRoot, withIntermediateDirectories: true)
         MeetingFiles.root = MeetingFiles.suggestedRoot
+        return true
     }
 }
 
@@ -103,7 +111,7 @@ private struct FolderStep: View {
             )
             HStack {
                 Image(systemName: "folder.fill").foregroundStyle(.blue)
-                Text((folder ?? MeetingFiles.suggestedRoot).path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).monospaced()
+                Text(MeetingFiles.displayPath(folder ?? MeetingFiles.suggestedRoot)).monospaced()
                 Spacer()
                 Button("Choose…") {
                     if let url = chooseMeetingsFolder() {
@@ -113,7 +121,10 @@ private struct FolderStep: View {
                 }
             }
             if folder == nil {
-                Text("Continue to use ~/Meetings.").font(.callout).foregroundStyle(.secondary)
+                Text(MeetingFiles.canUseSuggestedRoot
+                    ? "Continue to use ~/Meetings."
+                    : "Continue to choose a folder; you can create a new one, such as ~/Meetings.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
         }
     }
@@ -242,12 +253,21 @@ private struct DownloadsStep: View {
     private var speechModel: SpeechModel { SpeechModel.find(speechModelID) ?? .recommended }
     /// Your Ollama can write summaries without downloading Ollama itself.
     private var yoursUsable: Bool { ollama.yours.problem == nil }
+    /// Without your Ollama, the App Store version summarizes with Apple's model: nothing to download.
+    private var usesApple: Bool { !yoursUsable && !SummaryEngine.offersDownload }
 
     private var items: [Item] {
         var items = [Item(
             id: "speech", name: "Speech model: \(speechModel.name)", size: Int64(speechModel.megabytes) * 1_000_000,
             ready: models.downloaded.contains(speechModel.id), progress: models.progress[speechModel.id]
         )]
+        if usesApple {
+            items.append(Item(
+                id: "apple", name: "Summaries: Apple Intelligence, built into macOS", size: 0,
+                ready: SummaryEngine.appleProblem == nil, progress: nil
+            ))
+            return items
+        }
         if !yoursUsable {
             items.append(Item(
                 id: "ollama", name: "Ollama \(SummaryEngine.version), for summaries", size: SummaryEngine.archiveBytes + SummaryEngine.installedBytes,
@@ -279,6 +299,8 @@ private struct DownloadsStep: View {
                     Spacer()
                     if let progress = item.progress {
                         ProgressView(value: progress).frame(width: 120)
+                    } else if item.id == "apple" {
+                        Text(SummaryEngine.appleProblem ?? "Ready").foregroundStyle(.secondary)
                     } else {
                         Text(item.ready ? "Ready" : bytes.string(fromByteCount: item.size)).foregroundStyle(.secondary)
                     }
@@ -317,6 +339,7 @@ private struct DownloadsStep: View {
             models.download(speechModel)
             await models.waitForDownload(speechModel)
         }
+        if usesApple { return }
         if !yoursUsable, !ollama.isDownloadedInstalled {
             await ollama.installOllama()
             guard ollama.isDownloadedInstalled else { return }

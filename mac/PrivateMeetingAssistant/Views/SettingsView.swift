@@ -167,7 +167,7 @@ private struct StorageSettings: View {
                     }
                 } label: {
                     Text("Meetings folder")
-                    Text(meetingsFolder?.path.replacingOccurrences(of: NSHomeDirectory(), with: "~") ?? "Not chosen yet")
+                    Text(meetingsFolder.map(MeetingFiles.displayPath) ?? "Not chosen yet")
                         .textSelection(.enabled)
                 }
             } header: {
@@ -296,6 +296,9 @@ private struct AboutSettings: View {
                 }
             }
 
+            // App Store apps are removed from Launchpad or the Applications folder; a sandboxed app
+            // can't move itself to the Trash.
+            #if !APPSTORE
             Section {
                 Toggle(isOn: $keepMeetings) {
                     Text("Keep my meetings")
@@ -313,6 +316,7 @@ private struct AboutSettings: View {
             } header: {
                 Text("Uninstall")
             }
+            #endif
         }
         .formStyle(.grouped)
         .confirmationDialog("Uninstall Private Meeting Assistant?", isPresented: $confirmUninstall) {
@@ -374,14 +378,19 @@ private struct ModelRow: View {
 @MainActor
 func chooseMeetingsFolder() -> URL? {
     let suggested = MeetingFiles.suggestedRoot
-    try? FileManager.default.createDirectory(at: suggested, withIntermediateDirectories: true)
+    if MeetingFiles.canUseSuggestedRoot {
+        try? FileManager.default.createDirectory(at: suggested, withIntermediateDirectories: true)
+    }
     let panel = NSOpenPanel()
-    panel.message = "Choose where to keep your meetings. Each meeting gets its own folder here."
+    panel.message = FileManager.default.fileExists(atPath: suggested.path)
+        ? "Choose where to keep your meetings. Each meeting gets its own folder here."
+        : "Choose where to keep your meetings, or create a folder for them (New Folder), such as “Meetings”."
     panel.prompt = "Use This Folder"
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
     panel.canCreateDirectories = true
-    panel.directoryURL = MeetingFiles.root ?? suggested
+    panel.directoryURL = MeetingFiles.root
+        ?? (FileManager.default.fileExists(atPath: suggested.path) ? suggested : MeetingFiles.realHome)
     return panel.runModal() == .OK ? panel.url : nil
 }
 
@@ -394,13 +403,16 @@ private struct SummarySettings: View {
     private let bytes = ByteCountFormatter()
 
     /// The engine summaries will actually use with the current choice.
-    private var usesYours: Bool {
+    private var effective: SummaryEngine.Choice {
         switch SummaryEngine.Choice(rawValue: choice) ?? .automatic {
-        case .yours: true
-        case .downloaded: false
-        case .automatic: ollama.yours.problem == nil
+        case .automatic where ollama.yours.problem == nil: .yours
+        case .automatic: SummaryEngine.offersDownload ? .downloaded : .apple
+        case .downloaded where !SummaryEngine.offersDownload: .apple
+        case let other: other
         }
     }
+
+    private var usesYours: Bool { effective == .yours }
 
     private var models: [String] { usesYours ? ollama.yours.models : ollama.downloadedModels }
 
@@ -408,12 +420,21 @@ private struct SummarySettings: View {
         Section {
             Picker(selection: $choice) {
                 Text("Automatic").tag(SummaryEngine.Choice.automatic.rawValue)
+                Text("Apple Intelligence").tag(SummaryEngine.Choice.apple.rawValue)
+                    .selectionDisabled(SummaryEngine.appleProblem != nil)
                 Text("Your Ollama").tag(SummaryEngine.Choice.yours.rawValue)
                     .selectionDisabled(ollama.yours.problem != nil)
-                Text("Downloaded Ollama").tag(SummaryEngine.Choice.downloaded.rawValue)
+                if SummaryEngine.offersDownload {
+                    Text("Downloaded Ollama").tag(SummaryEngine.Choice.downloaded.rawValue)
+                }
             } label: {
                 Text("Engine")
-                Text("Ollama is the free program that runs the summary model. Automatic uses yours if it's running, otherwise a private copy downloaded here.")
+                Text(SummaryEngine.offersDownload
+                    ? "Ollama is the free program that runs the summary model. Automatic uses yours if it's running, otherwise a private copy downloaded here. Apple Intelligence uses the model built into macOS."
+                    : "Automatic uses your Ollama if it's running, otherwise Apple Intelligence, the model built into macOS.")
+            }
+            LabeledContent("Apple Intelligence") {
+                Text(SummaryEngine.appleProblem ?? "Ready, on this Mac").foregroundStyle(.secondary)
             }
             LabeledContent("Your Ollama") {
                 if let problem = ollama.yours.problem {
@@ -422,7 +443,7 @@ private struct SummarySettings: View {
                     Text("\(ollama.yours.version ?? "") · ^[\(ollama.yours.models.count) local model](inflect: true)").foregroundStyle(.secondary)
                 }
             }
-            LabeledContent("Downloaded Ollama") {
+            if SummaryEngine.offersDownload { LabeledContent("Downloaded Ollama") {
                 if let progress = ollama.progress["ollama"] {
                     ProgressView(value: progress).frame(width: 140)
                 } else if ollama.isDownloadedInstalled {
@@ -434,8 +455,8 @@ private struct SummarySettings: View {
                             .disabled(SummaryEngine.spaceProblem(modelBytes: SummaryEngine.recommendedModel.bytes) != nil)
                     }
                 }
-            }
-            Picker(selection: $model) {
+            } }
+            if effective != .apple { Picker(selection: $model) {
                 ForEach(models, id: \.self) { Text($0).tag($0) }
                 if !models.contains(model) {
                     Text("\(model) (not downloaded)").tag(model)
@@ -443,7 +464,7 @@ private struct SummarySettings: View {
             } label: {
                 Text("Model")
                 Text("The language model that reads the transcript. Larger ones write better summaries but take longer.")
-            }
+            } }
             if !models.contains(model), usesYours || ollama.isDownloadedInstalled {
                 let recommended = SummaryEngine.recommendedModel
                 HStack {
@@ -470,7 +491,9 @@ private struct SummarySettings: View {
         } header: {
             Text("Summaries")
         } footer: {
-            Text("After a meeting, a model on this Mac reads the transcript and writes the main points, decisions and action items. A downloaded Ollama only runs while the app is open. Cloud models are never used.")
+            Text(SummaryEngine.offersDownload
+                ? "After a meeting, a model on this Mac reads the transcript and writes the main points, decisions and action items. A downloaded Ollama only runs while the app is open. Cloud models are never used."
+                : "After a meeting, a model on this Mac reads the transcript and writes the main points, decisions and action items. Cloud models are never used.")
         }
         .task { await ollama.refresh() }
     }

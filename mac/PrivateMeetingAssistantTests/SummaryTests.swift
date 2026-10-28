@@ -62,12 +62,33 @@ struct LiveSummaryTests {
             Segment(id: Int64(i), meetingID: 1, source: line.0, startMs: i * 5_000, endMs: i * 5_000 + 4_000, text: line.1)
         }
         let model = SummaryEngine.recommendedModel.name
-        let summary = try await Summarizer(baseURL: SummaryEngine.yoursURL, model: model).summarize(segments)
+        let summary = try await Summarizer(backend: .ollama(SummaryEngine.yoursURL, model: model)).summarize(segments)
         print("summary:", summary)
         #expect(summary.summary.lowercased().contains("pric"))
         #expect(summary.actionItems.count >= 2)
         #expect(summary.actionItems.allSatisfy { !$0.text.contains("\n") })
         #expect(summary.actionItems.contains { $0.owner == "Me" })
         #expect(!summary.decisions.isEmpty)
+    }
+}
+
+/// Apple's on-device model, when Apple Intelligence is on: a real summary through the same path the
+/// App Store build uses by default.
+@Suite(.enabled(if: SummaryEngine.appleProblem == nil, "Apple Intelligence isn't available"))
+struct AppleSummaryTests {
+    @Test(.timeLimit(.minutes(3)))
+    func summarizesWithAppleIntelligence() async throws {
+        let lines = [
+            (AudioSource.system, "Thanks for joining. The App Store build is ready for review."),
+            (.mic, "Great. Let's submit it on Monday, and I'll write the release notes."),
+            (.system, "Agreed. I'll prepare the screenshots by Friday."),
+        ]
+        let segments = lines.enumerated().map { i, line in
+            Segment(id: Int64(i), meetingID: 1, source: line.0, startMs: i * 5_000, endMs: i * 5_000 + 4_000, text: line.1, speaker: line.0.speaker)
+        }
+        let summary = try await Summarizer(backend: .apple).summarize(segments)
+        print("apple summary: \(summary)")
+        #expect(!summary.summary.isEmpty)
+        #expect(!summary.actionItems.isEmpty)
     }
 }

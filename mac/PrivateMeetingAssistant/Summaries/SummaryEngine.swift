@@ -1,21 +1,42 @@
 import AppKit
 import CryptoKit
 import Foundation
+import FoundationModels
 import Observation
 import OSLog
 import Security
 
 private let log = Logger(subsystem: "dev.ruy.private-meeting-assistant", category: "ollama")
 
-/// Which Ollama writes summaries: the one already on this Mac if it's usable, otherwise one this app
-/// downloads on request (the official standalone build, verified) and runs privately.
+/// What writes summaries, all on this Mac: Apple's on-device model (Apple Intelligence), the Ollama
+/// already on this Mac if it's usable, or (outside the App Store, which doesn't allow apps to download
+/// and run programs) an Ollama this app downloads on request (the official build, verified) and runs
+/// privately.
 @MainActor @Observable
 final class SummaryEngine {
     static let shared = SummaryEngine()
 
     enum Choice: String, CaseIterable, Identifiable {
-        case automatic, yours, downloaded
+        case automatic, apple, yours, downloaded
         var id: Self { self }
+    }
+
+    /// Whether this build can download and run its own Ollama: not in the App Store build.
+    #if APPSTORE
+    nonisolated static let offersDownload = false
+    #else
+    nonisolated static let offersDownload = true
+    #endif
+
+    /// Why Apple's on-device model can't be used, or nil if it can.
+    nonisolated static var appleProblem: String? {
+        switch SystemLanguageModel.default.availability {
+        case .available: nil
+        case .unavailable(.appleIntelligenceNotEnabled): "Turn on Apple Intelligence in System Settings to use it."
+        case .unavailable(.deviceNotEligible): "This Mac doesn't support Apple Intelligence."
+        case .unavailable(.modelNotReady): "Apple's model is still downloading. Try again in a few minutes."
+        case .unavailable: "Apple's model isn't available on this Mac."
+        }
     }
 
     /// Your Ollama, as last checked.
@@ -29,8 +50,10 @@ final class SummaryEngine {
 
     // The pinned official build: ollama-darwin.tgz from the GitHub release, with its published SHA-256.
     nonisolated static let version = "0.40.5"
+    #if !APPSTORE
     nonisolated static let archiveURL = URL(string: "https://github.com/ollama/ollama/releases/download/v0.40.5/ollama-darwin.tgz")!
     nonisolated static let archiveSHA256 = "75f9907dafa2fd4c61b5967de2ebb81ccc17eb28da9172edbad0dbc717474dcf"
+    #endif
     nonisolated static let archiveBytes: Int64 = 174_000_000
     nonisolated static let installedBytes: Int64 = 540_000_000
     /// Ollama's Developer ID team; the unpacked binary must be signed by it.
@@ -58,9 +81,13 @@ final class SummaryEngine {
     /// 0…1 while the downloaded Ollama or a model is downloading, keyed by "ollama" or the model name.
     private(set) var progress: [String: Double] = [:]
     private(set) var error: String?
+    #if !APPSTORE
     @ObservationIgnored private var server: Process?
 
     var isDownloadedInstalled: Bool { FileManager.default.isExecutableFile(atPath: Self.binary.path) }
+    #else
+    let isDownloadedInstalled = false
+    #endif
 
     init() {
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
@@ -72,11 +99,13 @@ final class SummaryEngine {
 
     func refresh() async {
         yours = await Self.check(Self.yoursURL)
+        #if !APPSTORE
         if server != nil, let models = try? await Self.models(at: Self.downloadedURL) {
             downloadedModels = models
         } else if isDownloadedInstalled {
             downloadedModels = Self.modelsOnDisk()
         }
+        #endif
     }
 
     private nonisolated static func check(_ url: URL) async -> Yours {
@@ -144,18 +173,31 @@ final class SummaryEngine {
         }
     }
 
-    /// The server to summarize with, started if needed, with `model` available on it.
-    func endpoint(choice: Choice, model: String) async throws -> URL {
+    /// What to summarize with: Apple's model, or a server (started if needed) with `model` on it.
+    /// Automatic prefers your Ollama, then (in the App Store build, which has no downloaded Ollama)
+    /// Apple's model.
+    func backend(choice: Choice, model: String) async throws -> Summarizer.Backend {
         await refresh()
         let yoursUsable = yours.problem == nil && yours.models.contains(model)
         switch choice {
+        case .apple:
+            if let problem = Self.appleProblem { throw Unavailable.notSetUp(problem) }
+            return .apple
         case .yours:
             guard yours.problem == nil else { throw Unavailable.notSetUp("Your Ollama can't be used: \(yours.problem!)") }
             guard yours.models.contains(model) else { throw Unavailable.notSetUp("Your Ollama doesn't have \(model). Choose another model in Settings.") }
-            return Self.yoursURL
+            return .ollama(Self.yoursURL, model: model)
         case .automatic where yoursUsable:
-            return Self.yoursURL
+            return .ollama(Self.yoursURL, model: model)
+        case .automatic where !Self.offersDownload:
+            if let problem = Self.appleProblem {
+                throw Unavailable.notSetUp("\(problem) Or start your own Ollama with a model.")
+            }
+            return .apple
         case .automatic, .downloaded:
+            #if APPSTORE
+            throw Unavailable.notSetUp("This version can't download Ollama. Use Apple's model or your own Ollama.")
+            #else
             guard isDownloadedInstalled else {
                 throw Unavailable.notSetUp("Set up summaries in Settings: download Ollama, or start your own.")
             }
@@ -163,7 +205,8 @@ final class SummaryEngine {
             guard (try? await Self.models(at: Self.downloadedURL))?.contains(model) == true else {
                 throw Unavailable.notSetUp("Download \(model) in Settings › Summaries first.")
             }
-            return Self.downloadedURL
+            return .ollama(Self.downloadedURL, model: model)
+            #endif
         }
     }
 
@@ -177,6 +220,12 @@ final class SummaryEngine {
         return "Summaries need \(f.string(fromByteCount: needed)) free, but only \(f.string(fromByteCount: free)) is available."
     }
 
+    #if APPSTORE
+    // The App Store doesn't allow downloading and running programs: no downloaded Ollama.
+    func installOllama() async {}
+    func startServer() async throws { throw Unavailable.notSetUp("This version can't run its own Ollama.") }
+    func stopServer() {}
+    #else
     /// Downloads, verifies and unpacks the pinned Ollama build into the app's data folder.
     func installOllama() async {
         guard !isDownloadedInstalled, progress["ollama"] == nil else { return }
@@ -212,6 +261,8 @@ final class SummaryEngine {
         }
     }
 
+    #endif
+
     /// Downloads `model` into the downloaded Ollama, or into yours (`intoYours`), with progress.
     func pull(_ model: String, bytes: Int64, intoYours: Bool) async {
         guard progress[model] == nil else { return }
@@ -242,6 +293,7 @@ final class SummaryEngine {
         }
     }
 
+    #if !APPSTORE
     /// Starts the downloaded Ollama on its private port, with its models in the app's folder.
     func startServer() async throws {
         if server?.isRunning == true { return }
@@ -300,7 +352,10 @@ final class SummaryEngine {
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { throw Unavailable.notSetUp("\(tool) failed (\(process.terminationStatus)).") }
     }
+    #endif
 }
+
+#if !APPSTORE
 
 /// A file download with progress, saved to a given location.
 private final class FileDownload: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
@@ -345,3 +400,4 @@ private final class FileDownload: NSObject, URLSessionDownloadDelegate, @uncheck
         }
     }
 }
+#endif

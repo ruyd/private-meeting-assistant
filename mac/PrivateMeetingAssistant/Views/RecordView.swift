@@ -1218,15 +1218,16 @@ private struct MeetingsFolderSetup: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Image(systemName: "folder.fill").foregroundStyle(.blue)
-                Text(MeetingFiles.suggestedRoot.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).monospaced()
+                Text(MeetingFiles.displayPath(MeetingFiles.suggestedRoot)).monospaced()
             }
             HStack {
                 Button("Cancel") { done(nil) }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Choose Another Folder…") {
+                Button(MeetingFiles.canUseSuggestedRoot ? "Choose Another Folder…" : "Choose Folder…") {
                     if let url = chooseMeetingsFolder() { done(url) }
                 }
-                Button("Use ~/Meetings") {
+                .keyboardShortcut(MeetingFiles.canUseSuggestedRoot ? nil : .defaultAction)
+                if MeetingFiles.canUseSuggestedRoot { Button("Use ~/Meetings") {
                     do {
                         try FileManager.default.createDirectory(at: MeetingFiles.suggestedRoot, withIntermediateDirectories: true)
                         done(MeetingFiles.suggestedRoot)
@@ -1234,7 +1235,7 @@ private struct MeetingsFolderSetup: View {
                         done(nil)
                     }
                 }
-                .keyboardShortcut(.defaultAction)
+                .keyboardShortcut(.defaultAction) }
             }
         }
         .padding(24)

@@ -20,12 +20,16 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Private Meeting Assistant transcribes the other participants in your calls. Audio never leaves this Mac.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
 	<string>Private Meeting Assistant saves meetings in the folder you chose, which is in your Documents folder.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Ruy Delgado. MIT License.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Private Meeting Assistant transcribes what you say in meetings. Audio never leaves this Mac.</string>
 	<key>PMAGoogleClientID</key>

@@ -27,3 +27,5 @@ mac/scripts/release.sh
 ```
 
 It archives, exports, notarizes and staples the app, then wraps it in a signed and notarized DMG at `mac/build/release/`. Notarization reads an App Store Connect API key stored in the keychain under the profile `pma-notary` (see the comment at the top of the script). `SKIP_NOTARIZE=1` builds a signed DMG without notarizing.
+
+The sandboxed Mac App Store build is the `AppStore` configuration, uploaded with `mac/scripts/release-appstore.sh`. See [APPSTORE.md](APPSTORE.md) for what differs and the App Store Connect steps.
