@@ -33,14 +33,28 @@ The app is registered: [App Store Connect app 6828188643](https://appstoreconnec
 8. **App Review notes**, so review goes smoothly. Something like:
    > Records meetings and transcribes them on the Mac. Microphone: records the user. System Audio Recording: hears the other participants in calls (macOS asks). Screen Recording: only for screenshots and video of the meeting app the user picks; nothing is captured otherwise. The first launch downloads a speech model (about 570 MB) from Hugging Face; it's data for whisper.cpp, not code. Summaries use Apple Intelligence (turn it on in System Settings) or the user's own Ollama. To test without a call, choose "Microphone only", press ⌘R, speak, and press ⌘. to stop.
 
+## Signing
+
+The App Store build needs two certificates on the Mac that builds it, with their private keys:
+**Apple Distribution** (signs the app) and **Mac Installer Distribution** (signs the `.pkg`). Create them
+once in Xcode › Settings › Accounts › your team › Manage Certificates › **+**, signed in as the Account
+Holder (or an Admin). Back them up (export as .p12 from Keychain Access) like the Developer ID one.
+
+An App Store Connect API key with the App Manager role can't create them: Apple keeps
+cloud-managed distribution certificates for Account Holders and Admins, so with only that key the export
+fails with "Cloud signing permission error". With the certificates in place, `release-appstore.sh`
+signs with the Xcode account and lets Xcode create the App Store provisioning profile.
+
 ## Each release
 
 1. Describe the version in `CHANGELOG.md`: move what's under **Unreleased** into a `## X.Y.Z — date` section, set `MARKETING_VERSION` in `project.yml` to match, and commit. The script refuses to build without that section or with uncommitted changes (`ALLOW_DIRTY=1` for local tries only).
-2. Upload with an App Store Connect API key (App Manager role, from Users and Access › Integrations):
+2. Upload, with the account signed in to Xcode (see Signing):
 
 ```bash
-ASC_KEY_PATH=~/keys/AuthKey_XXXX.p8 ASC_KEY_ID=XXXX ASC_ISSUER_ID=<issuer-uuid> mac/scripts/release-appstore.sh
+mac/scripts/release-appstore.sh
 ```
+
+   Or with an App Store Connect API key that's allowed cloud-managed signing, by adding `ASC_KEY_PATH=… ASC_KEY_ID=… ASC_ISSUER_ID=…`.
 
 It archives the `AppStore` configuration with a new build number (the time, or `BUILD_NUMBER`; always newer than the last published one), signs it for the App Store (Xcode creates the Apple Distribution certificate and profile the first time), and uploads it. Then it adds the build to **Published builds** in `CHANGELOG.md` and tags the commit `appstore/<version>-<build>`.
 3. Commit `CHANGELOG.md` and push the tag (the script prints the command).
