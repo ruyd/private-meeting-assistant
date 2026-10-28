@@ -2,12 +2,27 @@ import AppKit
 import SwiftUI
 
 struct RecordView: View {
+    @AppStorage("micDeviceUID") private var savedMicUID = ""
     @State private var session = CaptureSession()
     @State private var apps: [(target: SystemAudioTarget, isPlaying: Bool)] = []
+    @State private var devices: [InputDevice] = []
+    /// Shown before recording starts, e.g. the lid is closed and the built-in mic is selected.
+    @State private var preflightIssue: MicIssue?
 
     var body: some View {
         Form {
             Section {
+                Picker("Microphone", selection: micSelection) {
+                    Text("System default (\(InputDevices.systemDefault(among: devices)?.name ?? "none"))").tag("")
+                    if !devices.isEmpty { Divider() }
+                    ForEach(devices) { device in Text(device.name).tag(device.uid) }
+                    if !savedMicUID.isEmpty, !devices.contains(where: { $0.uid == savedMicUID }) {
+                        Text("Disconnected microphone").tag(savedMicUID)
+                    }
+                }
+                if let issue = session.micIssue ?? (session.state == .idle ? preflightIssue : nil) {
+                    MicIssueRow(issue: issue) { micSelection.wrappedValue = $0.uid }
+                }
                 Picker("Other participants", selection: $session.target) {
                     Text(SystemAudioTarget.allExceptThisApp.label).tag(SystemAudioTarget.allExceptThisApp)
                     if !apps.isEmpty { Divider() }
@@ -19,7 +34,7 @@ struct RecordView: View {
             } header: {
                 Text("Sources")
             } footer: {
-                Text("Choose your call app to keep notifications and music out of the transcript. Your microphone is always recorded as “Me”.")
+                Text("Your microphone is recorded as “Me”. Choose your call app for “Them” to keep notifications and music out of the transcript.")
             }
 
             Section("Levels") {
@@ -70,7 +85,7 @@ struct RecordView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Record")
-        .task { await refreshAppsWhileIdle() }
+        .task { await refreshSources() }
         .onDisappear { session.stop() }
     }
 
@@ -84,9 +99,29 @@ struct RecordView: View {
         }
     }
 
-    /// Keeps the app list current (apps start and stop playing) while no capture is running.
-    private func refreshAppsWhileIdle() async {
+    /// The picker's choice, saved across launches; "" follows the system default.
+    private var micSelection: Binding<String> {
+        Binding(
+            get: { savedMicUID },
+            set: { uid in
+                savedMicUID = uid
+                session.selectMic(uid: uid.isEmpty ? nil : uid)
+                refreshPreflightIssue()
+            }
+        )
+    }
+
+    private func refreshPreflightIssue() {
+        let device = InputDevices.effective(chosenUID: session.micDeviceUID, among: devices)
+        preflightIssue = MicIssue.lidClosed(using: device, among: devices)
+    }
+
+    /// Keeps the device and app lists current (devices get plugged in, apps start playing).
+    private func refreshSources() async {
+        session.selectMic(uid: savedMicUID.isEmpty ? nil : savedMicUID)
         while !Task.isCancelled {
+            devices = InputDevices.all()
+            refreshPreflightIssue()
             if session.state == .idle {
                 var list = SystemAudioCapture.audioApps()
                 // Keep the current choice selectable even if that app went quiet or quit.
@@ -102,6 +137,21 @@ struct RecordView: View {
     private func openPrivacyPane(_ anchor: String) {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
             NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+private struct MicIssueRow: View {
+    let issue: MicIssue
+    let use: (InputDevice) -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Label(issue.message, systemImage: "mic.slash").foregroundStyle(.orange)
+            Spacer()
+            if let suggestion = issue.suggestion {
+                Button("Use \(suggestion.name)") { use(suggestion) }
+            }
         }
     }
 }

@@ -1,16 +1,20 @@
+import AudioToolbox
 import AVFoundation
 import OSLog
 
 private let log = Logger(subsystem: "dev.ruy.private-meeting-assistant", category: "mic")
 
-/// The default microphone via AVAudioEngine, delivered as 16 kHz mono chunks.
+/// A microphone via AVAudioEngine, delivered as 16 kHz mono chunks.
 final class MicCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let resampler = MonoResampler()
+    /// nil follows the system default input.
+    private let deviceUID: String?
     private let onChunk: @Sendable (AudioChunk) -> Void
     private var configObserver: NSObjectProtocol?
 
-    init(onChunk: @escaping @Sendable (AudioChunk) -> Void) {
+    init(deviceUID: String?, onChunk: @escaping @Sendable (AudioChunk) -> Void) {
+        self.deviceUID = deviceUID
         self.onChunk = onChunk
     }
 
@@ -43,6 +47,14 @@ final class MicCapture: @unchecked Sendable {
 
     private func installTapAndStart() throws {
         let input = engine.inputNode
+        // Falls back to the system default when the chosen device is unplugged.
+        if let deviceUID, var deviceID = InputDevices.deviceID(forUID: deviceUID), let unit = input.audioUnit {
+            let status = AudioUnitSetProperty(
+                unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                &deviceID, UInt32(MemoryLayout<AudioDeviceID>.size)
+            )
+            if status != noErr { log.error("couldn't select input \(deviceUID, privacy: .public): \(status)") }
+        }
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw CaptureError.noMicrophone }
         log.notice("mic input format: \(format.description, privacy: .public)")

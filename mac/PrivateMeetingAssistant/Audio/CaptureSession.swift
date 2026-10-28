@@ -12,39 +12,46 @@ final class CaptureSession {
     private(set) var levels: [AudioSource: Float] = [:]
     /// Problems that left one source unavailable; capture continues with the other.
     private(set) var warnings: [String] = []
+    /// Set when the running mic delivers only digital silence.
+    private(set) var micIssue: MicIssue?
     private(set) var error: String?
     private(set) var micPermission = MicCapture.permission
     var target: SystemAudioTarget = .allExceptThisApp
     /// Off for in-person meetings: only the microphone is recorded.
     var captureSystemAudio = true
+    /// The chosen input device's UID; nil follows the system default.
+    private(set) var micDeviceUID: String?
 
     @ObservationIgnored private let meter = LevelMeter()
     @ObservationIgnored private var mic: MicCapture?
     @ObservationIgnored private var system: SystemAudioCapture?
+    @ObservationIgnored private var sink: (@Sendable (AudioChunk) -> Void)?
     @ObservationIgnored private var levelTask: Task<Void, Never>?
+    @ObservationIgnored private var micCheckPending = false
+
+    init(micDeviceUID: String? = nil) {
+        self.micDeviceUID = micDeviceUID
+    }
 
     /// `consumer` receives every chunk on an audio thread (mic and system chunks may arrive concurrently).
     func start(consumer: (@Sendable (AudioChunk) -> Void)? = nil) async {
         guard state == .idle else { return }
         state = .starting
         warnings = []
+        micIssue = nil
         error = nil
         let meter = meter
+        meter.reset()
         let sink: @Sendable (AudioChunk) -> Void = { chunk in
             meter.record(chunk)
             consumer?(chunk)
         }
+        self.sink = sink
 
         if MicCapture.permission == .notDetermined { _ = await MicCapture.requestPermission() }
         micPermission = MicCapture.permission
         if micPermission == .authorized {
-            let mic = MicCapture(onChunk: sink)
-            do {
-                try mic.start()
-                self.mic = mic
-            } catch {
-                warnings.append("Microphone: \(error.localizedDescription)")
-            }
+            startMic()
         } else {
             warnings.append(CaptureError.microphoneDenied.localizedDescription)
         }
@@ -64,21 +71,27 @@ final class CaptureSession {
             state = .idle
             return
         }
-        let checkMic = mic != nil
         levelTask = Task { [weak self] in
-            var micChecked = !checkMic
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(100))
                 guard let self else { return }
                 self.levels = self.meter.take()
-                // A real microphone always picks up some noise; exact zeros mean it's disconnected or blocked.
-                if !micChecked, self.meter.samplesSeen(.mic) >= Int(MonoResampler.sampleRate) * 2 {
-                    micChecked = true
-                    if !self.meter.heardSignal(.mic) { self.warnings.append(InputDiagnostics.silentMicMessage()) }
-                }
+                self.checkMicSignal()
             }
         }
         state = .running
+    }
+
+    /// Switches input devices, live if capture is running. nil follows the system default.
+    func selectMic(uid: String?) {
+        guard uid != micDeviceUID else { return }
+        micDeviceUID = uid
+        guard state == .running, mic != nil else { return }
+        mic?.stop()
+        mic = nil
+        micIssue = nil
+        meter.reset(.mic)
+        startMic()
     }
 
     func stop() {
@@ -88,8 +101,31 @@ final class CaptureSession {
         system?.stop()
         mic = nil
         system = nil
+        sink = nil
         levels = [:]
         state = .idle
+    }
+
+    private func startMic() {
+        guard let sink else { return }
+        let mic = MicCapture(deviceUID: micDeviceUID, onChunk: sink)
+        do {
+            try mic.start()
+            self.mic = mic
+            micCheckPending = true
+        } catch {
+            warnings.append("Microphone: \(error.localizedDescription)")
+        }
+    }
+
+    /// A real microphone always picks up some noise; two seconds of exact zeros means it's
+    /// disconnected (e.g. a closed MacBook lid), muted in hardware or blocked.
+    private func checkMicSignal() {
+        guard micCheckPending, meter.samplesSeen(.mic) >= Int(MonoResampler.sampleRate) * 2 else { return }
+        micCheckPending = false
+        guard !meter.heardSignal(.mic) else { return }
+        let devices = InputDevices.all()
+        micIssue = .silent(using: InputDevices.effective(chosenUID: micDeviceUID, among: devices), among: devices)
     }
 }
 
@@ -111,6 +147,10 @@ final class LevelMeter: Sendable {
             $0[chunk.source, default: Activity()].samples += chunk.samples.count
             if rms > 0 { $0[chunk.source]?.heardSignal = true }
         }
+    }
+
+    func reset(_ source: AudioSource? = nil) {
+        activity.withLock { if let source { $0[source] = nil } else { $0 = [:] } }
     }
 
     func samplesSeen(_ source: AudioSource) -> Int { activity.withLock { $0[source]?.samples ?? 0 } }

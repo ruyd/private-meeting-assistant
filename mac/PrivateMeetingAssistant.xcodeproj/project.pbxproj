@@ -7,7 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1DCE9A634FFDDDDB08790EC2 /* InputDevicesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DA321EF12BE492A470B776B /* InputDevicesTests.swift */; };
 		2B8ED7650084D8461F6383E8 /* AudioChunk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD7B8E7779BDD8FD8787BD4 /* AudioChunk.swift */; };
+		54462F7F0FC4491BF865B176 /* InputDevices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A66EACCE136FEBDC2046FF /* InputDevices.swift */; };
 		673A1DBF66262B27953CB25B /* CaptureSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 483CB24095244760F11A3D7F /* CaptureSession.swift */; };
 		6952C58AAEBAA9468045FFBC /* SystemAudioCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADB0D949421945748AF540E6 /* SystemAudioCapture.swift */; };
 		834AA88A6E8830DD2D66165F /* CaptureSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37371385834E310668676DB /* CaptureSelfTest.swift */; };
@@ -32,6 +34,8 @@
 
 /* Begin PBXFileReference section */
 		0A1E9C26D9D4A1CB9E1FB8FF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		1DA321EF12BE492A470B776B /* InputDevicesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputDevicesTests.swift; sourceTree = "<group>"; };
+		27A66EACCE136FEBDC2046FF /* InputDevices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputDevices.swift; sourceTree = "<group>"; };
 		3F470A5195B054938EB3C0F2 /* MonoResamplerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonoResamplerTests.swift; sourceTree = "<group>"; };
 		483CB24095244760F11A3D7F /* CaptureSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureSession.swift; sourceTree = "<group>"; };
 		529A4DC17FF102AFAA59F165 /* PrivateMeetingAssistant.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PrivateMeetingAssistant.entitlements; sourceTree = "<group>"; };
@@ -71,6 +75,7 @@
 			children = (
 				9AD7B8E7779BDD8FD8787BD4 /* AudioChunk.swift */,
 				483CB24095244760F11A3D7F /* CaptureSession.swift */,
+				27A66EACCE136FEBDC2046FF /* InputDevices.swift */,
 				CDFF6A4602820A461C9F0988 /* InputDiagnostics.swift */,
 				AFE42A2FF34BDCA940D2C70A /* MicCapture.swift */,
 				ADB0D949421945748AF540E6 /* SystemAudioCapture.swift */,
@@ -113,6 +118,7 @@
 		F97A9D950B13E6896A0331E3 /* PrivateMeetingAssistantTests */ = {
 			isa = PBXGroup;
 			children = (
+				1DA321EF12BE492A470B776B /* InputDevicesTests.swift */,
 				3F470A5195B054938EB3C0F2 /* MonoResamplerTests.swift */,
 			);
 			path = PrivateMeetingAssistantTests;
@@ -212,6 +218,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1DCE9A634FFDDDDB08790EC2 /* InputDevicesTests.swift in Sources */,
 				B4E1003E2FED075DEBAC785D /* MonoResamplerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -224,6 +231,7 @@
 				834AA88A6E8830DD2D66165F /* CaptureSelfTest.swift in Sources */,
 				673A1DBF66262B27953CB25B /* CaptureSession.swift in Sources */,
 				CFE496466CE1B57FF219FBFF /* ContentView.swift in Sources */,
+				54462F7F0FC4491BF865B176 /* InputDevices.swift in Sources */,
 				8AAC7B811EF3547CEF0FB666 /* InputDiagnostics.swift in Sources */,
 				E70B231B93AF815E49EBAFC0 /* MicCapture.swift in Sources */,
 				E1A37067008F57FDD62B267B /* PrivateMeetingAssistantApp.swift in Sources */,

@@ -6,7 +6,7 @@ import Synchronization
 
 private let log = Logger(subsystem: "dev.ruy.private-meeting-assistant", category: "self-test")
 
-/// Debug builds only. Launch with `--capture-test <seconds> <output-dir> [--app <bundle-id>] [--no-system]` to capture
+/// Debug builds only. Launch with `--capture-test <seconds> <output-dir> [--app <bundle-id>] [--mic <device-uid>] [--follow-suggestion] [--no-system]` to capture
 /// both sources, write mic.wav, system.wav and summary.json to the folder, then quit.
 /// Lets capture be checked from the command line without clicking through the UI.
 enum CaptureSelfTest {
@@ -18,7 +18,8 @@ enum CaptureSelfTest {
         else { return }
         let dir = URL(fileURLWithPath: args[i + 2], isDirectory: true)
 
-        let session = CaptureSession()
+        let micUID = args.firstIndex(of: "--mic").flatMap { args.count > $0 + 1 ? args[$0 + 1] : nil }
+        let session = CaptureSession(micDeviceUID: micUID)
         if let a = args.firstIndex(of: "--app"), args.count > a + 1 {
             session.target = .app(bundleID: args[a + 1], name: args[a + 1])
         }
@@ -28,8 +29,15 @@ enum CaptureSelfTest {
         await session.start(consumer: { recorder.append($0) })
         log.notice("capture started: state \(String(describing: session.state), privacy: .public), warnings \(session.warnings, privacy: .public), error \(session.error ?? "none", privacy: .public)")
         try? await Task.sleep(for: .seconds(seconds))
+        var issue = session.micIssue.map { "\($0.message) Suggested: \($0.suggestion?.name ?? "none")" }
+        // Like clicking "Use <device>": switch mics mid-capture, then check the new one is heard.
+        if args.contains("--follow-suggestion"), let suggestion = session.micIssue?.suggestion {
+            session.selectMic(uid: suggestion.uid)
+            try? await Task.sleep(for: .seconds(3))
+            issue = (issue ?? "") + " Switched; issue now: \(session.micIssue?.message ?? "none")"
+        }
         session.stop()
-        recorder.write(to: dir, warnings: session.warnings + [session.error].compactMap { $0 })
+        recorder.write(to: dir, warnings: session.warnings + [session.error, issue].compactMap { $0 })
         log.notice("capture test finished, wrote \(dir.path, privacy: .public)")
         NSApp.terminate(nil)
     }
