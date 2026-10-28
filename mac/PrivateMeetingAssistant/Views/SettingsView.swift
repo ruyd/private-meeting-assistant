@@ -1,0 +1,131 @@
+import AppKit
+import AVFoundation
+import SwiftUI
+
+enum SettingsKeys {
+    static let speechModel = "speechModel"
+    static let language = "language"
+}
+
+struct SettingsView: View {
+    @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
+    @AppStorage(SettingsKeys.language) private var language = "auto"
+    @State private var micPermission = MicCapture.permission
+    private let store = ModelStore.shared
+
+    private static let languages: [(code: String, name: String)] = [
+        ("auto", "Detect automatically"), ("en", "English"), ("es", "Spanish"), ("pt", "Portuguese"),
+        ("fr", "French"), ("de", "German"), ("it", "Italian"), ("nl", "Dutch"), ("ja", "Japanese"), ("zh", "Chinese"),
+    ]
+
+    private var englishOnly: Bool { SpeechModel.find(modelID)?.englishOnly ?? false }
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(SpeechModel.catalog) { model in
+                    ModelRow(model: model, isSelected: modelID == model.id) { modelID = model.id }
+                }
+                if let error = store.error {
+                    Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                }
+            } header: {
+                Text("Speech model")
+            } footer: {
+                Text("Models are downloaded once from Hugging Face and run on this Mac. Each hour of meeting adds about 1 MB of transcript.")
+            }
+
+            Section {
+                Picker("Language", selection: englishOnly ? .constant("en") : $language) {
+                    ForEach(Self.languages, id: \.code) { Text($0.name).tag($0.code) }
+                }
+                .disabled(englishOnly)
+            } footer: {
+                if englishOnly { Text("English-only models always transcribe English.") }
+            }
+
+            Section("Permissions") {
+                LabeledContent("Microphone") {
+                    HStack {
+                        Text(micPermissionText).foregroundStyle(.secondary)
+                        Button("Open Settings") { openPrivacyPane("Privacy_Microphone") }
+                    }
+                }
+                LabeledContent("System audio") {
+                    Button("Open Settings") { openPrivacyPane("Privacy_ScreenCapture") }
+                }
+                Text("macOS asks the first time you record. If “Them” stays silent while audio is playing, allow this app under **System Audio Recording Only**.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("About") {
+                LabeledContent("Version", value: version)
+                LabeledContent("Privacy", value: "Audio and transcripts stay on this Mac.")
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Settings")
+        .onAppear {
+            store.refresh()
+            micPermission = MicCapture.permission
+        }
+    }
+
+    private var micPermissionText: String {
+        switch micPermission {
+        case .authorized: "Allowed"
+        case .denied: "Denied"
+        case .restricted: "Blocked by a device policy"
+        case .notDetermined: "Not asked yet"
+        @unknown default: "Unknown"
+        }
+    }
+
+    private var version: String {
+        let info = Bundle.main.infoDictionary
+        return "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+    }
+
+    private func openPrivacyPane(_ anchor: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+private struct ModelRow: View {
+    let model: SpeechModel
+    let isSelected: Bool
+    let select: () -> Void
+    private let store = ModelStore.shared
+
+    var body: some View {
+        let downloaded = store.downloaded.contains(model.id)
+        HStack(spacing: 12) {
+            Button(action: select) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .imageScale(.large)
+            }
+            .buttonStyle(.plain)
+            .help(downloaded ? "Use this model" : "Use this model (download it first)")
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(model.name)
+                    if model == .recommended { Text("Recommended").font(.caption).foregroundStyle(.secondary) }
+                }
+                Text("\(model.detail) \(model.megabytes) MB.").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let progress = store.progress[model.id] {
+                ProgressView(value: progress).frame(width: 100)
+                Button("Cancel") { store.cancel(model) }
+            } else if downloaded {
+                Button("Remove") { store.remove(model) }
+            } else {
+                Button("Download") { store.download(model) }
+            }
+        }
+    }
+}

@@ -12,6 +12,9 @@ enum AudioSource: String, Sendable, CaseIterable {
 struct AudioChunk: Sendable {
     let source: AudioSource
     let samples: [Float]
+    /// Host time (mach_absolute_time) of the first sample, from the audio clock. Used to place
+    /// chunks on the meeting timeline, since system audio pauses whenever nothing is playing.
+    let hostTime: UInt64
 }
 
 enum CaptureError: LocalizedError {

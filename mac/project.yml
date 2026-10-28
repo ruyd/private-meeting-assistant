@@ -4,6 +4,10 @@ options:
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
+packages:
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit
+    exactVersion: 1.1.1
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -15,6 +19,9 @@ targets:
     type: application
     platform: macOS
     sources: [PrivateMeetingAssistant]
+    dependencies:
+      - package: WhisperKit
+        product: WhisperKit
     info:
       path: PrivateMeetingAssistant/Info.plist
       properties:

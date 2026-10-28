@@ -115,11 +115,13 @@ final class SystemAudioCapture: @unchecked Sendable {
         let onChunk = onChunk
         let tapFormat = format
         var procID: AudioDeviceIOProcID?
-        let status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregate.id, ioQueue) { _, inputData, _, _, _ in
+        let status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregate.id, ioQueue) { _, inputData, inputTime, _, _ in
             guard let buffer = AVAudioPCMBuffer(pcmFormat: tapFormat, bufferListNoCopy: inputData, deallocator: nil),
                   let samples = try? resampler.convert(buffer), !samples.isEmpty
             else { return }
-            onChunk(AudioChunk(source: .system, samples: samples))
+            let time = inputTime.pointee
+            let hostTime = time.mFlags.contains(.hostTimeValid) ? time.mHostTime : mach_absolute_time()
+            onChunk(AudioChunk(source: .system, samples: samples, hostTime: hostTime))
         }
         guard status == noErr, let procID else { throw CaptureError.tapFailed("IO proc error \(status)") }
         ioProcID = procID

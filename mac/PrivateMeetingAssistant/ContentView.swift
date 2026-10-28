@@ -42,26 +42,8 @@ struct ContentView: View {
                     description: Text("Recorded meetings and search will appear here.")
                 )
             case .settings:
-                AboutView()
+                SettingsView()
             }
         }
-    }
-}
-
-private struct AboutView: View {
-    private var version: String {
-        let info = Bundle.main.infoDictionary
-        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
-        let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "\(short) (\(build))"
-    }
-
-    var body: some View {
-        Form {
-            LabeledContent("Version", value: version)
-            LabeledContent("Privacy", value: "Audio and transcripts stay on this Mac.")
-        }
-        .formStyle(.grouped)
-        .navigationTitle("Settings")
     }
 }

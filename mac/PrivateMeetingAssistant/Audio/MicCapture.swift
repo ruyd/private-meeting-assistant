@@ -62,9 +62,10 @@ final class MicCapture: @unchecked Sendable {
         let onChunk = onChunk
         // The tap block runs on an AVAudioEngine worker thread (not the real-time thread),
         // so converting here is fine and keeps the resampler on a single thread.
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, when in
             guard let samples = try? resampler.convert(buffer), !samples.isEmpty else { return }
-            onChunk(AudioChunk(source: .mic, samples: samples))
+            let hostTime = when.isHostTimeValid ? when.hostTime : mach_absolute_time()
+            onChunk(AudioChunk(source: .mic, samples: samples, hostTime: hostTime))
         }
         engine.prepare()
         try engine.start()
