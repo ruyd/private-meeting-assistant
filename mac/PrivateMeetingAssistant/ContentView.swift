@@ -26,6 +26,7 @@ struct ContentView: View {
     /// Lives here, not in the Record page, so recording continues while you browse other pages.
     @State private var recorder = Recorder()
     @AppStorage(SetupView.completedKey) private var setupCompleted = false
+    @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
     @State private var showSetup = false
 
     var body: some View {
@@ -54,6 +55,11 @@ struct ContentView: View {
         .environment(navigation)
         .environment(MeetingLibrary.shared)
         .onAppear { if !setupCompleted { showSetup = true } }
+        // Loads the chosen speech model in the background (again when it changes or finishes
+        // downloading), so Start Recording begins right away.
+        .task(id: "\(modelID) \(ModelStore.shared.downloaded.contains(modelID))") {
+            await recorder.preload(SpeechModel.find(modelID) ?? .recommended)
+        }
         .sheet(isPresented: $showSetup) {
             SetupView {
                 setupCompleted = true

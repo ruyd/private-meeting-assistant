@@ -1,7 +1,10 @@
 import Foundation
-import WhisperKit
+import Synchronization
+import whisper
 
-/// A loaded Whisper model. Not safe for concurrent use: callers transcribe one utterance at a time.
+/// A loaded Whisper model, run by whisper.cpp on this Mac's GPU (Metal). Loading reads the model file
+/// directly, with no per-Mac compile step, so it takes well under a second once the file is in the
+/// disk cache. Not safe for concurrent use: callers transcribe one utterance at a time.
 final class Transcriber: @unchecked Sendable {
     struct Line: Equatable, Sendable {
         /// Seconds from the start of the transcribed audio.
@@ -12,52 +15,127 @@ final class Transcriber: @unchecked Sendable {
 
     /// Segments Whisper is this sure contain no speech are dropped.
     static let noSpeechThreshold: Float = 0.6
+    /// whisper.cpp rejects input shorter than a second; shorter utterances are padded with silence.
+    private static let minimumSamples = 17_600
 
     let model: SpeechModel
-    private let whisper: WhisperKit
+    private let handle: Handle
+    private var context: OpaquePointer { handle.context }
+    private var state: OpaquePointer { handle.state }
+    private let threads = Int32(min(8, ProcessInfo.processInfo.activeProcessorCount))
 
-    private init(model: SpeechModel, whisper: WhisperKit) {
+    private init(model: SpeechModel, handle: Handle) {
         self.model = model
-        self.whisper = whisper
+        self.handle = handle
     }
 
-    /// Loads (and on first use, compiles for this Mac's Neural Engine) a downloaded model.
-    /// The first load also fetches the model's tokenizer from Hugging Face and caches it.
+    deinit {
+        handle.free()
+    }
+
+    /// whisper.cpp's memory for one loaded model, freed exactly once: when its transcriber goes away,
+    /// or when the process exits. ggml aborts the process at exit if any of its Metal memory is still
+    /// in use, and the app keeps a model loaded until it quits.
+    private final class Handle: @unchecked Sendable {
+        let context: OpaquePointer
+        let state: OpaquePointer
+        /// whisper.cpp blocks while it works; this keeps it off Swift's shared threads.
+        let queue = DispatchQueue(label: "dev.ruy.private-meeting-assistant.whisper", qos: .userInitiated)
+        private let freed = Mutex(false)
+
+        /// Loaded models not yet freed, for the exit handler.
+        static let live = Mutex<[ObjectIdentifier: Handle]>([:])
+        /// Registered after the first model loads, which is after ggml set up its own cleanup, so it
+        /// runs first (exit handlers run newest first).
+        static let exitHandler: Void = {
+            atexit {
+                for handle in Handle.live.withLock({ Array($0.values) }) {
+                    handle.queue.sync {} // let a transcription that's under way finish
+                    handle.free()
+                }
+            }
+        }()
+
+        init(context: OpaquePointer, state: OpaquePointer) {
+            self.context = context
+            self.state = state
+            Self.live.withLock { $0[ObjectIdentifier(self)] = self }
+            _ = Self.exitHandler
+        }
+
+        func free() {
+            guard freed.withLock({ freed in defer { freed = true }; return !freed }) else { return }
+            Self.live.withLock { $0[ObjectIdentifier(self)] = nil }
+            whisper_free_state(state)
+            whisper_free(context)
+        }
+    }
+
+    /// Loads a downloaded model onto the GPU.
     static func load(_ model: SpeechModel) async throws -> Transcriber {
-        let config = WhisperKitConfig(
-            downloadBase: ModelStore.downloadBase,
-            modelFolder: ModelStore.folder(for: model).path,
-            tokenizerFolder: ModelStore.downloadBase,
-            verbose: false,
-            logLevel: .none,
-            prewarm: true,
-            load: true,
-            download: false
-        )
-        return Transcriber(model: model, whisper: try await WhisperKit(config))
+        try await Task.detached(priority: .userInitiated) {
+            // whisper.cpp and ggml otherwise log every step to stderr.
+            whisper_log_set({ _, _, _ in }, nil)
+            var params = whisper_context_default_params()
+            params.use_gpu = true
+            params.flash_attn = true
+            guard let context = whisper_init_from_file_with_params(ModelStore.file(for: model).path, params) else {
+                throw TranscriberError.couldNotLoad(model.name)
+            }
+            guard let state = whisper_init_state(context) else {
+                whisper_free(context)
+                throw TranscriberError.couldNotLoad(model.name)
+            }
+            return Transcriber(model: model, handle: Handle(context: context, state: state))
+        }.value
     }
 
     /// `language` is an ISO code, or nil to detect it. English-only models always use English.
     func transcribe(_ samples: [Float], language: String?) async throws -> [Line] {
-        let language = model.englishOnly ? "en" : language
-        let options = DecodingOptions(
-            language: language,
-            temperatureFallbackCount: 3,
-            detectLanguage: language == nil,
-            skipSpecialTokens: true,
-            suppressBlank: true,
-            noSpeechThreshold: Self.noSpeechThreshold
-        )
-        let results = try await whisper.transcribe(audioArray: samples, decodeOptions: options)
-        if ProcessInfo.processInfo.environment["PMA_TRACE_SEGMENTS"] != nil {
-            for seg in results.flatMap(\.segments) {
-                print(String(format: "segment: noSpeech %.2f avgLogprob %.2f %@", seg.noSpeechProb, seg.avgLogprob, seg.text))
+        let language = model.englishOnly ? "en" : (language ?? "auto")
+        return try await withCheckedThrowingContinuation { continuation in
+            handle.queue.async {
+                continuation.resume(with: Result { try self.run(samples, language: language) })
             }
         }
-        return results.flatMap(\.segments)
-            .filter { $0.noSpeechProb < Self.noSpeechThreshold }
-            .map { Line(start: $0.start, end: $0.end, text: $0.text.trimmingCharacters(in: .whitespacesAndNewlines)) }
-            .filter { !Self.isNoiseMarker($0.text) }
+    }
+
+    private func run(_ samples: [Float], language: String) throws -> [Line] {
+        var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
+        params.n_threads = threads
+        // Each utterance stands alone: carrying text over makes Whisper repeat itself after silences.
+        params.no_context = true
+        params.suppress_blank = true
+        params.suppress_nst = true
+        params.no_speech_thold = Self.noSpeechThreshold
+        params.print_progress = false
+        params.print_realtime = false
+        params.print_timestamps = false
+        params.print_special = false
+
+        var input = samples
+        if input.count < Self.minimumSamples { input += [Float](repeating: 0, count: Self.minimumSamples - input.count) }
+
+        let status = language.withCString { code in
+            params.language = code
+            return input.withUnsafeBufferPointer { whisper_full_with_state(context, state, params, $0.baseAddress, Int32($0.count)) }
+        }
+        guard status == 0 else { throw TranscriberError.failed(status) }
+
+        let trace = ProcessInfo.processInfo.environment["PMA_TRACE_SEGMENTS"] != nil
+        return (0..<whisper_full_n_segments_from_state(state)).compactMap { i in
+            let text = String(cString: whisper_full_get_segment_text_from_state(state, i))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let noSpeech = whisper_full_get_segment_no_speech_prob_from_state(state, i)
+            if trace { print(String(format: "segment: noSpeech %.2f %@", noSpeech, text)) }
+            guard noSpeech < Self.noSpeechThreshold, !Self.isNoiseMarker(text) else { return nil }
+            // Timestamps are in hundredths of a second.
+            return Line(
+                start: Float(whisper_full_get_segment_t0_from_state(state, i)) / 100,
+                end: Float(whisper_full_get_segment_t1_from_state(state, i)) / 100,
+                text: text
+            )
+        }
     }
 
     /// Whisper's descriptions of non-speech, e.g. "[BLANK_AUDIO]", "(upbeat music)" or "♪ ♪".
@@ -67,5 +145,17 @@ final class Transcriber: @unchecked Sendable {
             || (s.hasPrefix("[") && s.hasSuffix("]"))
             || (s.hasPrefix("(") && s.hasSuffix(")"))
             || !s.contains(where: { $0.isLetter || $0.isNumber })
+    }
+}
+
+enum TranscriberError: LocalizedError {
+    case couldNotLoad(String)
+    case failed(Int32)
+
+    var errorDescription: String? {
+        switch self {
+        case .couldNotLoad(let name): "\(name) couldn't be loaded. Its file may be damaged: remove it in Settings and download it again."
+        case .failed(let code): "Transcription failed (whisper.cpp error \(code))."
+        }
     }
 }

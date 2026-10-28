@@ -22,6 +22,8 @@ final class Recorder {
     private(set) var isTakingScreenshot = false
 
     @ObservationIgnored private var transcriber: Transcriber?
+    /// A load under way, shared by `preload` and `start` so the model is never loaded twice.
+    @ObservationIgnored private var loading: (model: SpeechModel, task: Task<Transcriber, Error>)?
     @ObservationIgnored private var removeEcho = true
     /// Lines handed over by the pipeline but not yet inserted (they hop to the main actor).
     @ObservationIgnored private let undelivered = DeliveryCount()
@@ -54,17 +56,14 @@ final class Recorder {
             return
         }
         phase = .loadingModel
+        let transcriber: Transcriber
         do {
-            if transcriber?.model != model {
-                transcriber = nil
-                transcriber = try await Transcriber.load(model)
-            }
+            transcriber = try await self.transcriber(for: model)
         } catch {
             self.error = "Couldn't load \(model.name): \(error.localizedDescription)"
             phase = .idle
             return
         }
-        guard let transcriber else { return }
 
         // The meeting's folder: "<title> - <date time>" in the folder chosen in setup (~/Meetings by default).
         let started = Date()
@@ -112,6 +111,24 @@ final class Recorder {
         library.refresh()
         startedAt = started
         phase = .recording
+    }
+
+    /// Loads the model ahead of time, so starting a recording doesn't wait for it.
+    func preload(_ model: SpeechModel) async {
+        guard phase == .idle, ModelStore.isComplete(model) else { return }
+        _ = try? await transcriber(for: model)
+    }
+
+    /// The loaded model, loading it (or joining a load already under way) if needed.
+    private func transcriber(for model: SpeechModel) async throws -> Transcriber {
+        if let transcriber, transcriber.model == model { return transcriber }
+        if let loading, loading.model == model { return try await loading.task.value }
+        let task = Task { try await Transcriber.load(model) }
+        loading = (model, task)
+        defer { if loading?.model == model { loading = nil } }
+        let loaded = try await task.value
+        transcriber = loaded
+        return loaded
     }
 
     /// Stops capturing, then waits until everything said so far is transcribed.

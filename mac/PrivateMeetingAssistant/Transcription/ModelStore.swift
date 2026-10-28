@@ -1,37 +1,34 @@
 import Foundation
 import Observation
-import WhisperKit
 
-/// A WhisperKit speech model that can be downloaded from Hugging Face.
+/// A Whisper model in whisper.cpp's format: one file, downloaded from Hugging Face.
 struct SpeechModel: Identifiable, Hashable, Sendable {
-    /// WhisperKit variant, i.e. the folder name in argmaxinc/whisperkit-coreml.
+    /// The file's name without "ggml-" and ".bin", as in huggingface.co/ggerganov/whisper.cpp.
     let id: String
     let name: String
     let detail: String
     let megabytes: Int
-    /// Hugging Face repo whose tokenizer this model uses.
-    let tokenizerRepo: String
 
     var englishOnly: Bool { id.hasSuffix(".en") }
 
     static let catalog = [
+        SpeechModel(id: "base.en", name: "Base (English)", detail: "Fastest; fine for clear audio.", megabytes: 148),
+        SpeechModel(id: "small.en", name: "Small (English)", detail: "Good balance of speed and accuracy.", megabytes: 488),
         SpeechModel(
-            id: "openai_whisper-base.en", name: "Base (English)", detail: "Fastest; fine for clear audio.",
-            megabytes: 147, tokenizerRepo: "openai/whisper-base.en"
-        ),
-        SpeechModel(
-            id: "openai_whisper-small.en", name: "Small (English)", detail: "Good balance of speed and accuracy.",
-            megabytes: 487, tokenizerRepo: "openai/whisper-small.en"
-        ),
-        SpeechModel(
-            id: "openai_whisper-large-v3-v20240930_turbo_632MB", name: "Large v3 Turbo",
-            detail: "Most accurate, any language. Best for accents, crosstalk and jargon.",
-            megabytes: 646, tokenizerRepo: "openai/whisper-large-v3"
+            id: "large-v3-turbo-q5_0", name: "Large v3 Turbo",
+            detail: "Most accurate, any language. Best for accents, crosstalk and jargon.", megabytes: 574
         ),
     ]
     static let recommended = catalog[2]
 
     static func find(_ id: String) -> SpeechModel? { catalog.first { $0.id == id } }
+
+    /// The WhisperKit models earlier versions used, and the whisper.cpp model that replaces each.
+    static let replacements = [
+        "openai_whisper-base.en": "base.en",
+        "openai_whisper-small.en": "small.en",
+        "openai_whisper-large-v3-v20240930_turbo_632MB": "large-v3-turbo-q5_0",
+    ]
 }
 
 /// Downloads speech models into the app's data folder, checking free space first.
@@ -41,6 +38,7 @@ final class ModelStore {
 
     /// Keep this much free beyond the download itself.
     nonisolated static let spareBytes: Int64 = 2 * 1_000_000_000
+    nonisolated static let baseURL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main")!
 
     private(set) var downloaded: Set<String> = []
     /// 0...1 for downloads in progress.
@@ -52,15 +50,19 @@ final class ModelStore {
         URL.applicationSupportDirectory.appending(path: "dev.ruy.private-meeting-assistant", directoryHint: .isDirectory)
     }
 
-    /// WhisperKit's download root. Models land in models/argmaxinc/whisperkit-coreml/<variant>
-    /// and tokenizers in models/openai/<model>.
-    nonisolated static var downloadBase: URL { dataFolder.appending(path: "whisperkit", directoryHint: .isDirectory) }
+    /// Where models are kept (the same folder the earlier Tauri version used, so its downloads count).
+    nonisolated static var modelsFolder: URL { dataFolder.appending(path: "models", directoryHint: .isDirectory) }
 
-    nonisolated static func folder(for model: SpeechModel) -> URL {
-        downloadBase.appending(path: "models/argmaxinc/whisperkit-coreml/\(model.id)", directoryHint: .isDirectory)
+    nonisolated static func file(for model: SpeechModel) -> URL {
+        modelsFolder.appending(path: "ggml-\(model.id).bin")
     }
 
     init() {
+        // Earlier versions saved a WhisperKit model's name as the choice; keep the same choice.
+        let defaults = UserDefaults.standard
+        if let old = defaults.string(forKey: SettingsKeys.speechModel), let new = SpeechModel.replacements[old] {
+            defaults.set(new, forKey: SettingsKeys.speechModel)
+        }
         refresh()
     }
 
@@ -68,21 +70,9 @@ final class ModelStore {
         downloaded = Set(SpeechModel.catalog.filter { Self.isComplete($0) }.map(\.id))
     }
 
-    /// Where WhisperKit looks for the model's tokenizer first (the Hugging Face cache layout).
-    nonisolated static func tokenizerFolder(for model: SpeechModel) -> URL {
-        downloadBase.appending(path: "models/\(model.tokenizerRepo)", directoryHint: .isDirectory)
-    }
-
-    nonisolated static let tokenizerFiles = ["tokenizer.json", "tokenizer_config.json"]
-
+    /// Downloads land under another name and are renamed when complete, so a file here is whole.
     nonisolated static func isComplete(_ model: SpeechModel) -> Bool {
-        let folder = folder(for: model)
-        let tokenizer = tokenizerFolder(for: model)
-        return ["AudioEncoder.mlmodelc", "TextDecoder.mlmodelc", "MelSpectrogram.mlmodelc"].allSatisfy {
-            FileManager.default.fileExists(atPath: folder.appending(path: $0).path)
-        } && tokenizerFiles.allSatisfy {
-            FileManager.default.fileExists(atPath: tokenizer.appending(path: $0).path)
-        }
+        FileManager.default.fileExists(atPath: file(for: model).path)
     }
 
     nonisolated static var freeBytes: Int64? {
@@ -113,36 +103,30 @@ final class ModelStore {
                 refresh()
             }
             do {
-                try FileManager.default.createDirectory(at: Self.downloadBase, withIntermediateDirectories: true)
                 let id = model.id
-                _ = try await WhisperKit.download(variant: id, downloadBase: Self.downloadBase) { p in
-                    let fraction = p.fractionCompleted
+                try await Self.fetch(model) { fraction in
                     Task { @MainActor in ModelStore.shared.updateProgress(id, fraction) }
                 }
-                try await Self.downloadTokenizer(for: model)
             } catch is CancellationError {
+            } catch let error as URLError where error.code == .cancelled {
             } catch {
                 self.error = "Couldn't download \(model.name): \(error.localizedDescription)"
             }
         }
     }
 
-    /// Fetches the tokenizer with the model, so loading never needs the network. (WhisperKit would
-    /// otherwise fetch it on first load, and its Hub client can record tokenizer.json as downloaded
-    /// without writing the file.)
-    private nonisolated static func downloadTokenizer(for model: SpeechModel) async throws {
-        let folder = tokenizerFolder(for: model)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        for file in tokenizerFiles {
-            let url = URL(string: "https://huggingface.co/\(model.tokenizerRepo)/resolve/main/\(file)")!
-            let (temp, response) = try await URLSession.shared.download(from: url)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                throw URLError(.badServerResponse, userInfo: [NSURLErrorFailingURLErrorKey: url])
-            }
-            let destination = folder.appending(path: file)
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: temp, to: destination)
+    /// Downloads the model's file to a temporary place, then moves it into the models folder.
+    private nonisolated static func fetch(_ model: SpeechModel, progress: @escaping @Sendable (Double) -> Void) async throws {
+        let url = baseURL.appending(path: "ggml-\(model.id).bin")
+        let (temp, response) = try await URLSession.shared.download(from: url, delegate: DownloadProgress(progress))
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            try? FileManager.default.removeItem(at: temp)
+            throw URLError(.badServerResponse, userInfo: [NSURLErrorFailingURLErrorKey: url])
         }
+        try FileManager.default.createDirectory(at: modelsFolder, withIntermediateDirectories: true)
+        let destination = file(for: model)
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: temp, to: destination)
     }
 
     /// Progress callbacks hop to the main actor and can land after the download finished;
@@ -161,7 +145,52 @@ final class ModelStore {
     }
 
     func remove(_ model: SpeechModel) {
-        try? FileManager.default.removeItem(at: Self.folder(for: model))
+        try? FileManager.default.removeItem(at: Self.file(for: model))
         refresh()
+    }
+
+    // MARK: Files from earlier versions
+
+    /// WhisperKit's models, and Core ML's compiled copies of them, left by earlier versions.
+    nonisolated static var legacyFolders: [URL] {
+        [
+            dataFolder.appending(path: "whisperkit", directoryHint: .isDirectory),
+            URL.cachesDirectory.appending(path: "dev.ruy.private-meeting-assistant/com.apple.e5rt.e5bundlecache", directoryHint: .isDirectory),
+        ].filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// How much space the files from earlier versions take.
+    nonisolated static func legacyBytes() -> Int64 {
+        legacyFolders.reduce(0) { total, folder in
+            let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.totalFileAllocatedSizeKey])
+            var size: Int64 = 0
+            while let url = files?.nextObject() as? URL {
+                size += Int64((try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]))?.totalFileAllocatedSize ?? 0)
+            }
+            return total + size
+        }
+    }
+
+    /// Moves the files from earlier versions to the Trash.
+    nonisolated static func removeLegacyFiles() throws {
+        for folder in legacyFolders {
+            try FileManager.default.trashItem(at: folder, resultingItemURL: nil)
+        }
+    }
+}
+
+/// Reports a download's progress from its task.
+private final class DownloadProgress: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let report: @Sendable (Double) -> Void
+    private var observation: NSKeyValueObservation?
+
+    init(_ report: @escaping @Sendable (Double) -> Void) {
+        self.report = report
+    }
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        observation = task.progress.observe(\.fractionCompleted) { [report] progress, _ in
+            report(progress.fractionCompleted)
+        }
     }
 }

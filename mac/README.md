@@ -12,6 +12,8 @@ xcodegen generate
 open PrivateMeetingAssistant.xcodeproj
 ```
 
+Transcription uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (Metal). `xcodegen generate` first runs `scripts/fetch-whisper.sh`, which downloads the pinned prebuilt framework into `Vendor/whisper.framework` and checks its SHA-256; to update whisper.cpp, change the tag and checksum there.
+
 Every build, Debug included, is signed with the team's **Developer ID Application** certificate and uses Hardened Runtime. A stable signature means macOS keeps the Microphone and System Audio permissions across rebuilds.
 
 ## Release

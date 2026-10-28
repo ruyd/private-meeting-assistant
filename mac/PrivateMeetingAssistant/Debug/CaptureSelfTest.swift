@@ -74,7 +74,7 @@ enum CaptureSelfTest {
 
 extension CaptureSelfTest {
     /// `--prepare-model <id>`: downloads the model if needed (with the free-space check), then loads it
-    /// once so Core ML compiles it for this Mac. Logs how long each step took.
+    /// once to check it works. Logs how long each step took.
     @MainActor
     static func prepare(_ model: SpeechModel) async {
         let store = ModelStore.shared
@@ -96,7 +96,7 @@ extension CaptureSelfTest {
 }
 
 extension CaptureSelfTest {
-    /// `--transcribe-test <seconds> <output-dir> [--model <variant>] [--app <bundle-id>] [--keep-echo]`: records with
+    /// `--transcribe-test <seconds> <output-dir> [--model <id>] [--app <bundle-id>] [--keep-echo]`: records with
     /// live transcription and writes transcript.json (lines in order, with timing).
     @MainActor
     static func transcribe(seconds: Double, to dir: URL, args: [String]) async {

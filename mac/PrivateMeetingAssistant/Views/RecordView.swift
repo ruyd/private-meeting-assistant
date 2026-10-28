@@ -238,7 +238,7 @@ private struct NewRecordingView: View {
         if recorder.phase == .loadingModel {
             HStack(spacing: 10) {
                 ProgressView().controlSize(.small)
-                Text("Loading \(model.name)… The first time can take a minute or two.").foregroundStyle(.secondary)
+                Text("Loading \(model.name)…").foregroundStyle(.secondary)
             }
             .frame(height: 52)
         } else {

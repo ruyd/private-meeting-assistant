@@ -1,13 +1,12 @@
 # Generates PrivateMeetingAssistant.xcodeproj. After editing, run: xcodegen generate
 name: PrivateMeetingAssistant
 options:
+  # Downloads the pinned whisper.cpp framework into Vendor/ if it isn't there yet.
+  preGenCommand: scripts/fetch-whisper.sh
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
 packages:
-  WhisperKit:
-    url: https://github.com/argmaxinc/WhisperKit
-    exactVersion: 1.1.1
   SpeexDSP:
     path: Vendor/SpeexDSP
   GRDB:
@@ -25,8 +24,9 @@ targets:
     platform: macOS
     sources: [PrivateMeetingAssistant]
     dependencies:
-      - package: WhisperKit
-        product: WhisperKit
+      # whisper.cpp with Metal: speech to text on this Mac's GPU.
+      - framework: Vendor/whisper.framework
+        embed: true
       - package: SpeexDSP
       - package: GRDB
         product: GRDB
@@ -67,6 +67,8 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: dev.ruy.private-meeting-assistant.tests
+        # The app's whisper module, found when compiling the tests; the app itself provides it at run time.
+        FRAMEWORK_SEARCH_PATHS: $(PROJECT_DIR)/Vendor
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/Private Meeting Assistant.app/Contents/MacOS/Private Meeting Assistant
         BUNDLE_LOADER: $(TEST_HOST)
         CODE_SIGN_STYLE: Manual

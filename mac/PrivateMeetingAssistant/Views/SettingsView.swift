@@ -48,7 +48,7 @@ private struct TranscriptionSettings: View {
             } header: {
                 Text("Speech model")
             } footer: {
-                Text("The speech model turns what's said into text, right on this Mac. Bigger models catch more words and names but use more memory and battery. Each is downloaded once from Hugging Face; an hour of meeting then adds only about 1 MB of transcript.")
+                Text("The speech model turns what's said into text, right on this Mac, using its graphics chip. Bigger models catch more words and names but use more memory and battery. Each is downloaded once from Hugging Face and is ready to use right away; an hour of meeting then adds only about 1 MB of transcript.")
             }
 
             Section {
@@ -78,6 +78,9 @@ private struct TranscriptionSettings: View {
 /// Settings › Storage: where meetings are kept, and setup.
 private struct StorageSettings: View {
     @State private var meetingsFolder = MeetingFiles.root
+    /// Space taken by the WhisperKit models of earlier versions; nil while counting or once removed.
+    @State private var legacyBytes: Int64?
+    @State private var legacyError: String?
 
     var body: some View {
         Form {
@@ -105,6 +108,27 @@ private struct StorageSettings: View {
                 Text("Every meeting gets its own folder here, named after its subject and date, with the transcript and summary as Markdown files and any screenshots you took. They're ordinary files: open, share or back them up like any document. Changing the folder applies to new meetings; earlier ones stay where they are.")
             }
 
+            if let legacyBytes, legacyBytes > 0 {
+                Section {
+                    LabeledContent {
+                        Button("Move to Trash") {
+                            do {
+                                try ModelStore.removeLegacyFiles()
+                                self.legacyBytes = nil
+                            } catch {
+                                legacyError = "Couldn't remove them: \(error.localizedDescription)"
+                            }
+                        }
+                    } label: {
+                        Text("Old speech models")
+                        Text("Earlier versions used a different speech engine. Its models and their optimized copies take \(ByteCountFormatter.string(fromByteCount: legacyBytes, countStyle: .file)) and aren't needed anymore.")
+                    }
+                    if let legacyError {
+                        Label(legacyError, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                    }
+                }
+            }
+
             Section {
                 LabeledContent {
                     Button("Run Setup Again…") { NotificationCenter.default.post(name: SetupView.reopen, object: nil) }
@@ -115,6 +139,7 @@ private struct StorageSettings: View {
             }
         }
         .formStyle(.grouped)
+        .task { legacyBytes = await Task.detached { ModelStore.legacyBytes() }.value }
     }
 }
 
