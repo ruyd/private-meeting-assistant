@@ -14,6 +14,7 @@ A use case for AI-assisted software development: a small, focused app, built lar
 - **No per-seat subscription.** Recording, transcription and AI summaries are usually paid add-ons or separate subscriptions, and across a company those can add up to thousands a year. This app uses free, open models running on Macs people already have.
 
 - **Works with any call app** (Zoom, Meet, Teams, FaceTime, Slack, WhatsApp, in person). It records your microphone as **Me** and the call's audio as **Them**, so no bot joins the meeting. Pick one app to listen to, all system audio, or the microphone only.
+- **Tells speakers apart.** Each voice gets its own label (Participant 1, 2…) instead of one "Them", and in-person recordings tell everyone in the room apart. When the recording stops, listen to a short clip of each voice and name it (or pick from the calendar's invitees); the names carry into the transcript, search and summary. A small speaker model on the Mac does this; a few seconds of each voice are kept in the meeting's `voices/` folder.
 - **Live transcription** with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) on the Mac's GPU (Metal). Models load in well under a second.
 - **No echo without headphones.** When your speakers play the other side, your mic hears them too. Echo cancellation (SpeexDSP) plus an echo gate keeps their words out of "Me".
 - **Summaries, decisions and action items** from a local model in [Ollama](https://ollama.com): your own Ollama if it's running, or a private copy the app downloads on request. Cloud models are never used.
@@ -57,6 +58,9 @@ On first launch, a short setup walks through where meetings are saved, the micro
 |---|---|---|
 | Speech (whisper.cpp) | Base (English) 148 MB, Small (English) 488 MB, Large v3 Turbo 574 MB | Large v3 Turbo |
 | Summaries (Ollama) | Any local model in your Ollama, or one downloaded into the app's own | Gemma 4 12B with 24 GB of memory or more, Gemma 3 4B otherwise |
+| Speakers | WeSpeaker ResNet34 (Core ML) 8 MB | Downloaded when "Tell speakers apart" is on |
+
+The speaker model is [WeSpeaker](https://github.com/wenet-e2e/wespeaker)'s VoxCeleb ResNet34 as packaged by [pyannote](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM), in [Fluid Inference's Core ML conversion](https://huggingface.co/FluidInference/speaker-diarization-coreml) (modified from the original), under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/).
 
 The speech model is freed while a summary is written, so the two never compete for memory.
 
