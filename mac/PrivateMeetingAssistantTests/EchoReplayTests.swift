@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import Synchronization
 import Testing
 @testable import Private_Meeting_Assistant
 
@@ -45,6 +46,54 @@ struct EchoReplayTests {
                      gate.delay ?? -1, gate.echoLevel ?? -1, st.gated, st.farEndFrames, st.cancellerGain,
                      st.cancelledEcho > 0 ? 10 * log10(st.rawEcho / st.cancelledEcho) : 0))
         return out
+    }
+
+    /// How loud the far end's echo is in the saved audio (audio.m4a mixes the mic with the far end):
+    /// the mic as captured, against the mic the pipeline hands the audio file, while the far end plays.
+    @Test(.timeLimit(.minutes(5)))
+    func savedAudioEcho() async throws {
+        let dir = URL(fileURLWithPath: ProcessInfo.processInfo.environment["ECHO_REPLAY_DIR"]!)
+        let mic = try load(dir.appending(path: "mic.wav"))
+        let far = try load(dir.appending(path: "system.wav"))
+        let n = min(mic.count, far.count)
+        let model = try #require(SpeechModel.catalog.first(where: ModelStore.isComplete))
+        let saved = Mutex([Float](repeating: 0, count: n))
+        let start = mach_absolute_time()
+        let pipeline = TranscriptionPipeline(
+            transcriber: try await Transcriber.load(model), language: "en", startHostTime: start,
+            onAudio: { source, samples, position in
+                guard source == .mic else { return }
+                saved.withLock { out in
+                    for (i, s) in samples.enumerated() where position + i < n { out[position + i] = s }
+                }
+            },
+            onLine: { _ in }, onBacklog: { _ in }
+        )
+        for offset in stride(from: 0, to: n, by: 1_600) {
+            let hostTime = start + AVAudioTime.hostTime(forSeconds: Double(offset) / Double(Self.rate))
+            let end = min(offset + 1_600, n)
+            pipeline.append(AudioChunk(source: .system, samples: Array(far[offset..<end]), hostTime: hostTime))
+            pipeline.append(AudioChunk(source: .mic, samples: Array(mic[offset..<end]), hostTime: hostTime))
+        }
+        await pipeline.finish()
+        let cleaned = saved.withLock { $0 }
+
+        func power(_ x: ArraySlice<Float>) -> Float { x.reduce(0) { $0 + $1 * $1 } / Float(max(x.count, 1)) }
+        func db(_ x: Float) -> String { String(format: "%.1f dB", 10 * log10(max(x, 1e-12))) }
+        var farPower: Float = 0, rawPower: Float = 0, cleanedPower: Float = 0, frames = 0
+        let frame = Self.rate / 10
+        for s in stride(from: 0, to: n - frame, by: frame) where power(far[s..<s + frame]) > 1e-5 {
+            farPower += power(far[s..<s + frame])
+            rawPower += power(mic[s..<s + frame])
+            cleanedPower += power(cleaned[s..<s + frame])
+            frames += 1
+        }
+        for second in 0..<(n / Self.rate) {
+            let r = second * Self.rate..<(second + 1) * Self.rate
+            print("saved-audio second \(second): far \(db(power(far[r]))) mic \(db(power(mic[r]))) saved \(db(power(cleaned[r])))")
+        }
+        print("saved-audio echo: far end \(db(farPower / Float(frames))); mic echo as captured \(db(rawPower / Float(frames))), as saved \(db(cleanedPower / Float(frames)))")
+        #expect(cleanedPower < farPower / 100, "the saved echo should be at least 20 dB below the far end")
     }
 
     @Test func farEndTranscript() async throws {

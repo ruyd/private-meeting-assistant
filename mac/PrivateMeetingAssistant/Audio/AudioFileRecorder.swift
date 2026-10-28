@@ -5,15 +5,18 @@ import Synchronization
 private let log = Logger(subsystem: "dev.ruy.private-meeting-assistant", category: "audio-file")
 
 /// Saves the meeting's audio, the microphone and the call mixed together, as audio.m4a in the meeting's
-/// folder. The file follows the meeting's timeline from the start, so its times match the transcript:
+/// folder. It's fed what transcription hears, so the mic arrives with the call's echo already
+/// removed (without that, every word from the call would be heard twice, the second time through
+/// the speakers and the mic). The file follows the meeting's timeline from the start, so its times match the transcript:
 /// stretches where saving is turned off, or where nothing was captured, are silent.
 ///
-/// Fed from audio threads with the same 16 kHz chunks transcription gets; mixed on the meeting
-/// timeline by their host time and written about a second behind, so both sources have arrived.
+/// Fed from audio threads with 16 kHz audio at meeting sample positions; mixed on the meeting timeline
+/// and written two seconds behind, so both sources have arrived (echo removal holds the mic back up
+/// to 1.2 s).
 final class AudioFileRecorder: Sendable {
     static let rate = MonoResampler.sampleRate
     /// How far behind the newest audio the mix is written, for the other source to catch up.
-    private static let latencySamples = Int(rate)
+    private static let latencySamples = Int(rate * 2)
 
     private struct State {
         var isOn: Bool
@@ -50,14 +53,18 @@ final class AudioFileRecorder: Sendable {
         state.withLock { $0.isOn = on }
     }
 
-    /// Called from audio threads with every captured chunk.
+    /// Called from audio threads with a captured chunk, placed by its host time.
     func append(_ chunk: AudioChunk) {
         let seconds = AVAudioTime.seconds(forHostTime: chunk.hostTime) - AVAudioTime.seconds(forHostTime: startHostTime)
-        let position = max(Int(seconds * Self.rate), 0)
+        append(chunk.samples, at: max(Int(seconds * Self.rate), 0))
+    }
+
+    /// Called from audio threads with audio at a meeting sample position.
+    func append(_ samples: [Float], at position: Int) {
         let ready = state.withLock { state -> [Float]? in
-            state.newest = max(state.newest, position + chunk.samples.count)
+            state.newest = max(state.newest, position + samples.count)
             if state.isOn {
-                Self.add(chunk.samples, at: position, into: &state)
+                Self.add(samples, at: position, into: &state)
             }
             return Self.take(upTo: state.newest - Self.latencySamples, from: &state)
         }

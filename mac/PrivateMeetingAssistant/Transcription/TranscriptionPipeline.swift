@@ -43,6 +43,42 @@ final class TranscriptionPipeline: Sendable {
         var segmenters: [AudioSource: Segmenter] = [:]
         /// nil when echo removal is off (e.g. the user wears headphones and turned it off).
         var echoGate: EchoGate?
+        /// 30 ms frames (by meeting position) in which the far end played, for the last few seconds.
+        var farEndFrames: Set<Int> = []
+        /// The meeting position from which echo removal knows the echo's delay and level and
+        /// gates it; nil until then. Mic audio from before it may still carry the echo.
+        var echoRemovalReadyAt: Int?
+
+        /// Notes which frames of system audio had sound.
+        mutating func noteFarEnd(_ samples: [Float], at position: Int) {
+            let frame = Segmenter.frame
+            for start in stride(from: 0, to: samples.count, by: frame) {
+                let end = min(start + frame, samples.count)
+                var sum: Float = 0
+                for s in samples[start..<end] { sum += s * s }
+                if sum / Float(end - start) > 1e-6 { farEndFrames.insert((position + start) / frame) }
+            }
+            let oldest = (position - Int(MonoResampler.sampleRate) * 5) / frame
+            farEndFrames = farEndFrames.filter { $0 >= oldest }
+        }
+
+        /// The mic audio for the saved recording. Until echo removal has learned the echo's delay and
+        /// level (the first two seconds or so of the far end talking), its output still carries the
+        /// echo, so the mic is left out wherever the far end played up to half a second before.
+        func micForSaving(_ samples: [Float], at position: Int) -> [Float] {
+            guard echoGate != nil, !farEndFrames.isEmpty else { return samples }
+            if let ready = echoRemovalReadyAt, position >= ready { return samples }
+            let frame = Segmenter.frame
+            var out = samples
+            for start in stride(from: 0, to: samples.count, by: frame) {
+                if let ready = echoRemovalReadyAt, position + start >= ready { break }
+                let f = (position + start) / frame
+                if (f - 17...f).contains(where: farEndFrames.contains) {
+                    for i in start..<min(start + frame, out.count) { out[i] = 0 }
+                }
+            }
+            return out
+        }
 
         /// Cuts `samples` (starting at absolute sample `position`) into utterances.
         mutating func segment(_ source: AudioSource, _ samples: [Float], at position: Int) -> [Segmenter.Utterance] {
@@ -71,6 +107,9 @@ final class TranscriptionPipeline: Sendable {
     private let jobs: AsyncStream<Job>.Continuation
     private let worker: Task<Void, Never>
     private let onBacklog: @Sendable (Int) -> Void
+    /// Receives the audio transcription hears, at its meeting sample position: system audio as
+    /// captured, and the mic after echo removal. For saving the meeting's audio without echo.
+    private let onAudio: (@Sendable (AudioSource, [Float], Int) -> Void)?
 
     /// `onLine` and `onBacklog` are called off the main thread.
     init(
@@ -80,11 +119,13 @@ final class TranscriptionPipeline: Sendable {
         removeEcho: Bool = true,
         voiceprinter: Voiceprinter? = nil,
         identifySpeakers: Set<AudioSource> = [],
+        onAudio: (@Sendable (AudioSource, [Float], Int) -> Void)? = nil,
         onLine: @escaping @Sendable (TranscriptLine) -> Void,
         onBacklog: @escaping @Sendable (Int) -> Void
     ) {
         self.startHostTime = startHostTime
         self.onBacklog = onBacklog
+        self.onAudio = onAudio
         state = Mutex(State(echoGate: removeEcho ? EchoGate() : nil))
         let (stream, continuation) = AsyncStream.makeStream(of: Job.self)
         jobs = continuation
@@ -117,14 +158,26 @@ final class TranscriptionPipeline: Sendable {
     /// Called from audio threads with every captured chunk.
     func append(_ chunk: AudioChunk) {
         let position = samplePosition(of: chunk.hostTime)
+        let onAudio = onAudio
         let utterances = state.withLock { state -> [Segmenter.Utterance] in
             switch chunk.source {
             case .system:
                 state.echoGate?.addFarEnd(chunk.samples, at: position)
+                if onAudio != nil, state.echoGate != nil { state.noteFarEnd(chunk.samples, at: position) }
+                onAudio?(.system, chunk.samples, position)
                 return state.segment(.system, chunk.samples, at: position)
             case .mic:
-                guard state.echoGate != nil else { return state.segment(.mic, chunk.samples, at: position) }
-                guard let gated = state.echoGate?.processMic(chunk.samples, at: position) else { return [] }
+                guard state.echoGate != nil else {
+                    onAudio?(.mic, chunk.samples, position)
+                    return state.segment(.mic, chunk.samples, at: position)
+                }
+                let gated = state.echoGate?.processMic(chunk.samples, at: position)
+                if state.echoRemovalReadyAt == nil, state.echoGate?.delay != nil, state.echoGate?.echoLevel != nil {
+                    // Its gating takes another moment to settle (measured: about a second).
+                    state.echoRemovalReadyAt = position + chunk.samples.count + Int(MonoResampler.sampleRate * 1.5)
+                }
+                guard let gated else { return [] }
+                onAudio?(.mic, state.micForSaving(gated.samples, at: gated.position), gated.position)
                 return state.segment(.mic, gated.samples, at: gated.position)
             }
         }
@@ -140,6 +193,7 @@ final class TranscriptionPipeline: Sendable {
             }
             var jobs: [Job] = []
             if let held = state.echoGate?.flush() {
+                onAudio?(.mic, state.micForSaving(held.samples, at: held.position), held.position)
                 jobs += state.segment(.mic, held.samples, at: held.position).map { Job(source: .mic, utterance: $0) }
             }
             for source in AudioSource.allCases {

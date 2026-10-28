@@ -115,6 +115,8 @@ final class Recorder {
             removeEcho: removeEcho && capture.captureSystemAudio,
             voiceprinter: voiceprinter,
             identifySpeakers: capture.captureSystemAudio ? [.system] : [.mic],
+            // The saved audio gets the mic after echo removal, like the transcript.
+            onAudio: { [audioFile] _, samples, position in audioFile.append(samples, at: position) },
             onLine: { [undelivered] line in
                 undelivered.add(1)
                 Task { @MainActor [weak self] in
@@ -124,11 +126,7 @@ final class Recorder {
             },
             onBacklog: { count in Task { @MainActor [weak self] in self?.backlog = count } }
         )
-        let audioFile = audioFile
-        await capture.start(consumer: { chunk in
-            pipeline.append(chunk)
-            audioFile.append(chunk)
-        })
+        await capture.start(consumer: { pipeline.append($0) })
         guard capture.state == .running else {
             await pipeline.finish()
             try? store.deleteMeeting(meetingID)
@@ -229,10 +227,11 @@ final class Recorder {
         phase = .finishing
         capture.stop()
         await windowRecorder?.stop()
+        // Transcription hands the audio file the mic audio echo removal was still holding back.
+        await pipeline.finish()
         await audioFile.recorder?.finish()
         audioFile.set(nil)
         isSavingAudio = false
-        await pipeline.finish()
         // The last lines are still hopping to the main actor; let them land before the transcript is
         // read (and, later, saved).
         while undelivered.value > 0 { await Task.yield() }
@@ -362,5 +361,5 @@ private final class AudioFileBox: Sendable {
     private let value = Mutex<AudioFileRecorder?>(nil)
     var recorder: AudioFileRecorder? { value.withLock { $0 } }
     func set(_ recorder: AudioFileRecorder?) { value.withLock { $0 = recorder } }
-    func append(_ chunk: AudioChunk) { recorder?.append(chunk) }
+    func append(_ samples: [Float], at position: Int) { recorder?.append(samples, at: position) }
 }
