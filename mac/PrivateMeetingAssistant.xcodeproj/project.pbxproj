@@ -10,12 +10,14 @@
 		07D757D33C7CB28AD0521C3E /* Transcriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB7F196203912C9B50B34D30 /* Transcriber.swift */; };
 		1DCE9A634FFDDDDB08790EC2 /* InputDevicesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DA321EF12BE492A470B776B /* InputDevicesTests.swift */; };
 		2B8ED7650084D8461F6383E8 /* AudioChunk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD7B8E7779BDD8FD8787BD4 /* AudioChunk.swift */; };
+		3971E29F15B3B3C7D02EE7B1 /* EchoCanceller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13304DAB75AE7345800AA97B /* EchoCanceller.swift */; };
 		54462F7F0FC4491BF865B176 /* InputDevices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A66EACCE136FEBDC2046FF /* InputDevices.swift */; };
 		54F618C04BD5BDD54375251D /* EchoReplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6C8B1A7026B4B5813BF953 /* EchoReplayTests.swift */; };
 		5CC17E557B0F4655FBC013F0 /* TranscriptionPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2F4C682D2D46C1B89E6B9AF /* TranscriptionPipeline.swift */; };
 		673A1DBF66262B27953CB25B /* CaptureSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 483CB24095244760F11A3D7F /* CaptureSession.swift */; };
 		6952C58AAEBAA9468045FFBC /* SystemAudioCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADB0D949421945748AF540E6 /* SystemAudioCapture.swift */; };
 		6E788B5E18C8016BFF463574 /* TranscriptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09759623E7C9D20651A123F1 /* TranscriptionTests.swift */; };
+		6EF895B511B90CDADBF0D3A6 /* SpeexDSP in Frameworks */ = {isa = PBXBuildFile; productRef = 9B68F88AD9E7EFEB96A5396A /* SpeexDSP */; };
 		706E1C2E428F39CC5FF136DA /* SegmenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474B88E5A448B0C46FDCE295 /* SegmenterTests.swift */; };
 		77595433DCBF9043F196AAA6 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07EF1B4E69AC84B69396F6E9 /* SettingsView.swift */; };
 		834AA88A6E8830DD2D66165F /* CaptureSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37371385834E310668676DB /* CaptureSelfTest.swift */; };
@@ -49,7 +51,9 @@
 		07EF1B4E69AC84B69396F6E9 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		09759623E7C9D20651A123F1 /* TranscriptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionTests.swift; sourceTree = "<group>"; };
 		0A1E9C26D9D4A1CB9E1FB8FF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		0EE9081270BBF1F38FC4101F /* SpeexDSP */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SpeexDSP; path = Vendor/SpeexDSP; sourceTree = SOURCE_ROOT; };
 		12A1CD15800C810E7FF3710F /* EchoGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoGateTests.swift; sourceTree = "<group>"; };
+		13304DAB75AE7345800AA97B /* EchoCanceller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoCanceller.swift; sourceTree = "<group>"; };
 		1598FA704419441E27938234 /* jfk.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = jfk.wav; sourceTree = "<group>"; };
 		1DA321EF12BE492A470B776B /* InputDevicesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputDevicesTests.swift; sourceTree = "<group>"; };
 		27A66EACCE136FEBDC2046FF /* InputDevices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputDevices.swift; sourceTree = "<group>"; };
@@ -83,6 +87,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				96F6FA085CB7D817977ED06E /* WhisperKit in Frameworks */,
+				6EF895B511B90CDADBF0D3A6 /* SpeexDSP in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,9 +124,18 @@
 			path = Audio;
 			sourceTree = "<group>";
 		};
+		3ABB95F244D5D881BAD23E36 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				0EE9081270BBF1F38FC4101F /* SpeexDSP */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
 		42FF7255EC864B99643BC984 /* Transcription */ = {
 			isa = PBXGroup;
 			children = (
+				13304DAB75AE7345800AA97B /* EchoCanceller.swift */,
 				DD29A859BE892E0E71035B51 /* EchoGate.swift */,
 				B9CC8679F104C1E6DB490C3F /* ModelStore.swift */,
 				688E5A1E7ABF8643CFAE06E2 /* Recorder.swift */,
@@ -159,6 +173,7 @@
 		C6421EDE8DAA50092092335F = {
 			isa = PBXGroup;
 			children = (
+				3ABB95F244D5D881BAD23E36 /* Packages */,
 				848761AED89531BF022CC0AD /* PrivateMeetingAssistant */,
 				F97A9D950B13E6896A0331E3 /* PrivateMeetingAssistantTests */,
 				0DE5B2011CF162A5F3F52918 /* Products */,
@@ -225,6 +240,7 @@
 			name = PrivateMeetingAssistant;
 			packageProductDependencies = (
 				B8191DCF2ED59DBB98B72E2D /* WhisperKit */,
+				9B68F88AD9E7EFEB96A5396A /* SpeexDSP */,
 			);
 			productName = PrivateMeetingAssistant;
 			productReference = C8EE0CA096F2385353365A94 /* PrivateMeetingAssistant.app */;
@@ -260,6 +276,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AD72B5ED25EC284161B21789 /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				2B2D3A385FE9DDA7FE27D046 /* XCLocalSwiftPackageReference "Vendor/SpeexDSP" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0DE5B2011CF162A5F3F52918 /* Products */;
@@ -313,6 +330,7 @@
 				834AA88A6E8830DD2D66165F /* CaptureSelfTest.swift in Sources */,
 				673A1DBF66262B27953CB25B /* CaptureSession.swift in Sources */,
 				CFE496466CE1B57FF219FBFF /* ContentView.swift in Sources */,
+				3971E29F15B3B3C7D02EE7B1 /* EchoCanceller.swift in Sources */,
 				BCD61A5794469C82A3221A17 /* EchoGate.swift in Sources */,
 				54462F7F0FC4491BF865B176 /* InputDevices.swift in Sources */,
 				8AAC7B811EF3547CEF0FB666 /* InputDiagnostics.swift in Sources */,
@@ -575,6 +593,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		2B2D3A385FE9DDA7FE27D046 /* XCLocalSwiftPackageReference "Vendor/SpeexDSP" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Vendor/SpeexDSP;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		AD72B5ED25EC284161B21789 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -587,6 +612,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		9B68F88AD9E7EFEB96A5396A /* SpeexDSP */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SpeexDSP;
+		};
 		B8191DCF2ED59DBB98B72E2D /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AD72B5ED25EC284161B21789 /* XCRemoteSwiftPackageReference "WhisperKit" */;

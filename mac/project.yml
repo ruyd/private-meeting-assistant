@@ -8,6 +8,8 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit
     exactVersion: 1.1.1
+  SpeexDSP:
+    path: Vendor/SpeexDSP
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -22,6 +24,7 @@ targets:
     dependencies:
       - package: WhisperKit
         product: WhisperKit
+      - package: SpeexDSP
     info:
       path: PrivateMeetingAssistant/Info.plist
       properties:

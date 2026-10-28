@@ -49,6 +49,11 @@ final class Transcriber: @unchecked Sendable {
             noSpeechThreshold: Self.noSpeechThreshold
         )
         let results = try await whisper.transcribe(audioArray: samples, decodeOptions: options)
+        if ProcessInfo.processInfo.environment["PMA_TRACE_SEGMENTS"] != nil {
+            for seg in results.flatMap(\.segments) {
+                print(String(format: "segment: noSpeech %.2f avgLogprob %.2f %@", seg.noSpeechProb, seg.avgLogprob, seg.text))
+            }
+        }
         return results.flatMap(\.segments)
             .filter { $0.noSpeechProb < Self.noSpeechThreshold }
             .map { Line(start: $0.start, end: $0.end, text: $0.text.trimmingCharacters(in: .whitespacesAndNewlines)) }

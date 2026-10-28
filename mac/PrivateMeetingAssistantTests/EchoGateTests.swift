@@ -5,12 +5,15 @@ import Testing
 struct EchoGateTests {
     static let rate = 16_000
 
-    /// Syllable-like bursts of a tone between `from` and `to` seconds, silent elsewhere.
-    static func speech(hz: Float, amp: Float, from: Double, to: Double, seconds: Double) -> [Float] {
-        (0..<Int(seconds * Double(rate))).map { i in
+    /// Syllable-like bursts between `from` and `to` seconds, silent elsewhere. Broadband like a voice
+    /// (an adaptive echo canceller can't learn from a pure tone); `voice` picks a different noise.
+    static func speech(voice: UInt32, amp: Float, from: Double, to: Double, seconds: Double) -> [Float] {
+        var seed = voice
+        return (0..<Int(seconds * Double(rate))).map { i in
+            seed = seed &* 1_664_525 &+ 1_013_904_223
             let t = Double(i) / Double(rate)
             guard t >= from, t < to, (t - from).truncatingRemainder(dividingBy: 0.35) < 0.25 else { return 0 }
-            return amp * sin(2 * .pi * hz * Float(i) / Float(rate))
+            return amp * 1.7 * (Float(seed) / Float(UInt32.max) * 2 - 1)
         }
     }
 
@@ -54,7 +57,7 @@ struct EchoGateTests {
 
     @Test func suppressesEchoOfTheFarEnd() {
         let seconds = 6.0
-        let far = Self.speech(hz: 330, amp: 0.2, from: 1, to: 5, seconds: seconds)
+        let far = Self.speech(voice: 330, amp: 0.2, from: 1, to: 5, seconds: seconds)
         // The echo is louder than the tap's signal, as with laptop speakers turned up.
         let mic = zip(Self.delayed(far, by: 0.27, gain: 2.5), Self.noise(far.count, amp: 0.0005)).map(+)
         let out = Self.run(farEnd: far, mic: mic)
@@ -71,7 +74,7 @@ struct EchoGateTests {
     }
 
     @Test func passesNearEndSpeechUntouched() {
-        let near = Self.speech(hz: 220, amp: 0.2, from: 0.5, to: 2.5, seconds: 3)
+        let near = Self.speech(voice: 220, amp: 0.2, from: 0.5, to: 2.5, seconds: 3)
         let mic = zip(near, Self.noise(near.count, amp: 0.0005)).map(+)
         let out = Self.run(farEnd: [Float](repeating: 0, count: mic.count), mic: mic)
         #expect(out == mic)
@@ -79,9 +82,9 @@ struct EchoGateTests {
 
     @Test func passesYouTalkingOverTheFarEnd() {
         let seconds = 6.0
-        let far = Self.speech(hz: 330, amp: 0.2, from: 0.5, to: 6, seconds: seconds)
+        let far = Self.speech(voice: 330, amp: 0.2, from: 0.5, to: 6, seconds: seconds)
         let echo = Self.delayed(far, by: 0.27, gain: 0.3)
-        let near = Self.speech(hz: 220, amp: 0.25, from: 3, to: 4.5, seconds: seconds)
+        let near = Self.speech(voice: 220, amp: 0.25, from: 3, to: 4.5, seconds: seconds)
         let mic = zip(zip(echo, near).map(+), Self.noise(far.count, amp: 0.0005)).map(+)
         let out = Self.run(farEnd: far, mic: mic)
 
@@ -95,8 +98,8 @@ struct EchoGateTests {
     @Test func headphonesMeanNothingToGate() {
         // No echo reaches the mic, so the far end's level says nothing about the mic: you pass.
         let seconds = 5.0
-        let far = Self.speech(hz: 330, amp: 0.2, from: 0.5, to: 5, seconds: seconds)
-        let near = Self.speech(hz: 220, amp: 0.05, from: 2.5, to: 4, seconds: seconds)
+        let far = Self.speech(voice: 330, amp: 0.2, from: 0.5, to: 5, seconds: seconds)
+        let near = Self.speech(voice: 220, amp: 0.05, from: 2.5, to: 4, seconds: seconds)
         let mic = zip(near, Self.noise(far.count, amp: 0.0005)).map(+)
         let out = Self.run(farEnd: far, mic: mic)
         let kept = Self.db(Self.power(out, from: 2.5, to: 4) / Self.power(mic, from: 2.5, to: 4))

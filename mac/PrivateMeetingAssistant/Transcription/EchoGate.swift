@@ -3,10 +3,12 @@ import Foundation
 /// Keeps the other participants' voices, played through the speakers and picked up by the mic, out of
 /// the "Me" transcript.
 ///
-/// The far end is known exactly: it's the system audio tap, on the same clock as the mic. The gate
+/// The far end is known exactly: it's the system audio tap, on the same clock as the mic. First an
+/// adaptive echo canceller (SpeexDSP's MDF) subtracts the far end from the mic, which removes most of
+/// the echo and leaves your voice far louder than what remains. Then the gate handles the rest. It
 /// learns two things while the far end talks: the echo delay (speaker, room and device latency, found
 /// by correlating the loudness of the mic with the far end's) and the echo level (how loud the mic is
-/// relative to the far end at that delay). For every 30 ms mic frame it then predicts how loud the
+/// relative to the far end at that delay, after cancellation). For every 30 ms mic frame it then predicts how loud the
 /// echo is; frames no louder than that are attenuated before voice detection, so they never become
 /// "Me" utterances. When you talk, the mic is clearly louder than the predicted echo and passes
 /// through untouched, including when you talk over the other side.
@@ -40,25 +42,42 @@ struct EchoGate {
     private static let minDelayEvidence = 20
     /// A delay is trusted only if the loudness envelopes correlate at least this well.
     private static let minCorrelation: Float = 0.5
-    /// Your voice must be 3 dB above the loudest typical echo to count as you talking. Real speakers
-    /// and rooms don't echo every sound equally, so the bar is set from the spread of measured echo
-    /// levels (90th percentile), not their median.
-    private static let nearEndMargin: Float = 2
-    /// Once you're talking, keep passing audio for 150 ms so word endings aren't clipped.
+    /// Your voice must be 9 dB above the typical (median) echo to count as you talking: real speakers
+    /// and rooms don't echo every sound equally, and a median stays put when a few unusual frames
+    /// arrive, where a high percentile drifts.
+    private static let nearEndMargin: Float = 8
+    /// Once you're talking, keep passing audio for 300 ms so pauses inside a phrase aren't cut out.
     private static let nearEndHangover = 5
+    /// Stop learning the echo level while you talk and for a second after: the quiet moments between
+    /// your syllables would otherwise look like loud echo and raise the bar.
+    private static let learningPause = 33
     /// Echo frames are turned down 60 dB: loud laptop-speaker echo reaches the mic at around -16 dBFS,
     /// and must end up well below the voice detector's -50 dBFS threshold, since Whisper happily
     /// transcribes even faint speech.
     private static let attenuation: Float = 0.001
     /// Far-end power below this (-60 dBFS) counts as silence.
     private static let farEndActive: Float = 1e-6
-    /// Echo level samples kept (about 10 s of far-end speech) and needed before gating starts.
-    private static let maxRatios = 330
+    /// Echo level samples kept (about 6 s of far-end speech: long enough that talking over the far end
+    /// can't take it over, short enough to follow the canceller as it converges) and needed before
+    /// gating starts.
+    private static let maxRatios = 200
     private static let minRatios = 15
 
+    private let cancelEcho: Bool
+    /// Created once the delay is known: the far end is fed `cancellerDelay` frames late (a little less
+    /// than the measured delay) and scaled to the echo's level, so a short filter that converges in
+    /// a few seconds only has to model the room. Rebuilt if the delay moves by two frames or more.
+    private var canceller: EchoCanceller?
+    private var cancellerDelay = 0
+    private var cancellerGain: Float = 1
+    /// Far-end samples from absolute index `farBase`, for the canceller (gaps filled with silence).
+    private var farSamples: [Float] = []
+    private var farBase = 0
     private var farEnd: [Int: Float] = [:]
     private var farEndPartial: (frame: Int, sum: Float, count: Int)?
     private var micPower: [Int: Float] = [:]
+    /// Loudness the gate judges: after cancellation when the canceller runs, else the raw mic.
+    private var judgedPower: [Int: Float] = [:]
     private var mic: [Float] = []
     /// Absolute sample index of `mic[0]`.
     private var micStart: Int?
@@ -67,20 +86,40 @@ struct EchoGate {
     /// Echo delay in frames; nil until the far end has talked enough to measure it.
     private(set) var delay: Int?
     private var framesSinceDelayEstimate = 0
+    /// Debug hook: (frame, judged power, threshold or nil, gated).
+    var trace: ((Int, Float, Float?, Bool) -> Void)?
     private var ratios: [Float] = []
     private var hangover = 0
+    private var learningPaused = 0
     /// For diagnostics: mic frames seen, frames with far-end audio nearby, frames gated, best correlation.
-    private(set) var stats = (frames: 0, farEndFrames: 0, gated: 0, bestCorrelation: Float(-1), bestLag: -1)
+    private(set) var stats = (
+        frames: 0, farEndFrames: 0, gated: 0, bestCorrelation: Float(-1), bestLag: -1,
+        rawEcho: Float(0), cancelledEcho: Float(0), cancellerGain: Float(0)
+    )
 
-    /// Mic power relative to far-end power at the echo delay, for nearly all echo (90th percentile);
-    /// nil until learned. Double talk, a minority of frames, mostly sits above it.
+    /// `cancelEcho` subtracts the far end before gating; off, only the gate runs (for comparison).
+    init(cancelEcho: Bool = true) {
+        self.cancelEcho = cancelEcho
+    }
+
+    /// Typical (median) mic power relative to far-end power at the echo delay; nil until learned.
     var echoLevel: Float? {
         guard ratios.count >= Self.minRatios else { return nil }
-        return ratios.sorted()[ratios.count * 9 / 10]
+        return ratios.sorted()[ratios.count / 2]
     }
 
     /// Records far-end (system audio) samples starting at absolute sample `position`.
     mutating func addFarEnd(_ samples: [Float], at position: Int) {
+        if cancelEcho {
+            if farSamples.isEmpty { farBase = position }
+            let end = farBase + farSamples.count
+            if position > end {
+                farSamples += [Float](repeating: 0, count: position - end)
+            } else if position < end {
+                farSamples.removeLast(min(end - position, farSamples.count))
+            }
+            if position >= farBase { farSamples += samples }
+        }
         for (i, s) in samples.enumerated() {
             let frame = (position + i) / Self.frame
             if let partial = farEndPartial, partial.frame != frame {
@@ -152,9 +191,36 @@ struct EchoGate {
         guard let start = micStart else { return nil }
         let count = frames * Self.frame
         var out = Array(mic[0..<count])
+        if let canceller = prepareCanceller() {
+            let lag = cancellerDelay * Self.frame
+            let far = farEndSamples(from: start - lag, count: count).map { $0 * cancellerGain }
+            out = canceller.cancel(mic: out[...], farEnd: far[...])
+        }
+        // Keep only the far end the canceller can still need.
+        let drop = min(start + count - (Self.maxDelayFrames + 2) * Self.frame - farBase, farSamples.count)
+        if drop > 0 {
+            farSamples.removeFirst(drop)
+            farBase += drop
+        }
+        // With the canceller, the gate judges what's left of the echo, not the raw mic.
+        for offset in stride(from: 0, to: count, by: Self.frame) {
+            var power: Float = 0
+            for s in out[offset..<(offset + Self.frame)] { power += s * s }
+            judgedPower[(start + offset) / Self.frame] = power / Float(Self.frame)
+        }
         for offset in stride(from: 0, to: count, by: Self.frame) {
             let index = (start + offset) / Self.frame
-            if isEcho(power: micPower[index] ?? 0, frame: index) {
+            if canceller != nil, let delay, echoPeak(into: index, delay: delay) > Self.farEndActive {
+                stats.rawEcho += micPower[index] ?? 0
+                stats.cancelledEcho += judgedPower[index] ?? 0
+                stats.cancellerGain = cancellerGain
+            }
+            let echo = isEcho(power: judgedPower[index] ?? 0, frame: index)
+            if let trace {
+                let threshold = delay.flatMap { d in echoLevel.map { Self.nearEndMargin * $0 * echoPeak(into: index, delay: d) } }
+                trace(index, judgedPower[index] ?? 0, threshold, echo)
+            }
+            if echo {
                 for i in offset..<(offset + Self.frame) { out[i] *= Self.attenuation }
             }
         }
@@ -168,6 +234,7 @@ struct EchoGate {
     private mutating func isEcho(power: Float, frame index: Int) -> Bool {
         stats.frames += 1
         if hangover > 0 { hangover -= 1 }
+        if learningPaused > 0 { learningPaused -= 1 }
         guard let delay else { return false }
 
         let farEndPeak = echoPeak(into: index, delay: delay)
@@ -190,17 +257,47 @@ struct EchoGate {
         // speech is sustained, while an echo louder than usual is a single frame. (The next frame's
         // loudness is known because frames are held before release.)
         func louderThanEcho(_ f: Int) -> Bool {
-            guard let p = micPower[f] else { return false }
+            guard let p = judgedPower[f] else { return false }
             return p > Self.nearEndMargin * echoLevel * echoPeak(into: f, delay: delay)
         }
         if louderThanEcho(index) && (louderThanEcho(index - 1) || louderThanEcho(index + 1)) {
             hangover = Self.nearEndHangover
+            learningPaused = Self.learningPause
             return false
         }
         guard hangover == 0 else { return false }
-        learn()
+        // Learn only from clear echo, well under the bar: frames of your voice that land just under it
+        // would otherwise raise it, gating more of your voice, which would raise it further.
+        if learningPaused == 0, power < Self.nearEndMargin / 2 * echoLevel * farEndPeak { learn() }
         stats.gated += 1
         return true
+    }
+
+    /// Margin, in frames, between the measured delay and how late the canceller is fed the far end.
+    private static let cancellerMargin = 2
+    /// 256 ms: the margin, delay jitter and the room's reverb.
+    private static let cancellerTaps = 4_096
+
+    private mutating func prepareCanceller() -> EchoCanceller? {
+        guard cancelEcho, let delay else { return nil }
+        if canceller == nil || abs(delay - Self.cancellerMargin - cancellerDelay) >= 2 {
+            cancellerDelay = max(delay - Self.cancellerMargin, 0)
+            // Scale the far end to the echo's level (median mic-to-far power ratio at the delay).
+            let ratios = micPower.compactMap { f, m -> Float? in
+                guard let far = farEnd[f - delay], far > Self.farEndActive else { return nil }
+                return m / far
+            }.sorted()
+            cancellerGain = ratios.isEmpty ? 1 : min(max(ratios[ratios.count / 2].squareRoot(), 0.125), 16)
+            canceller = EchoCanceller(filterLength: Self.cancellerTaps)
+        }
+        return canceller
+    }
+
+    private func farEndSamples(from position: Int, count: Int) -> [Float] {
+        (position..<(position + count)).map { i in
+            let j = i - farBase
+            return j >= 0 && j < farSamples.count ? farSamples[j] : 0
+        }
     }
 
     /// The far end's loudest moment that can still be echoing in mic frame `index`.
@@ -261,5 +358,6 @@ struct EchoGate {
         guard micPower.count > Self.historyFrames * 2 else { return }
         farEnd = farEnd.filter { $0.key >= frame }
         micPower = micPower.filter { $0.key >= frame }
+        judgedPower = judgedPower.filter { $0.key >= frame }
     }
 }
