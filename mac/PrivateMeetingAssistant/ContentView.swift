@@ -22,28 +22,55 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     }
 }
 
+/// Opens a meeting, optionally scrolled to one transcript line.
+struct MeetingRoute: Hashable {
+    let meetingID: Int64
+    var focusSegmentID: Int64?
+}
+
+/// Where the window is: the sidebar section and, under Meetings, the open meeting.
+@MainActor @Observable
+final class AppNavigation {
+    var section: SidebarItem? = .record
+    var meetingPath: [MeetingRoute] = []
+
+    func open(_ route: MeetingRoute) {
+        section = .meetings
+        meetingPath = [route]
+    }
+}
+
 struct ContentView: View {
-    @State private var section: SidebarItem? = .record
+    @State private var navigation = AppNavigation()
+    /// Lives here, not in the Record page, so recording continues while you browse other pages.
+    @State private var recorder = Recorder()
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarItem.allCases, selection: $section) { s in
-                Label(s.title, systemImage: s.symbol)
+            List(SidebarItem.allCases, selection: $navigation.section) { s in
+                HStack {
+                    Label(s.title, systemImage: s.symbol)
+                    if s == .record && recorder.phase == .recording {
+                        Spacer()
+                        Circle().fill(.red).frame(width: 8, height: 8).help("Recording")
+                    }
+                }
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
-            switch section ?? .record {
+            switch navigation.section ?? .record {
             case .record:
-                RecordView()
+                RecordView(recorder: recorder)
             case .meetings:
-                ContentUnavailableView(
-                    "No meetings yet",
-                    systemImage: "list.bullet.rectangle",
-                    description: Text("Recorded meetings and search will appear here.")
-                )
+                NavigationStack(path: $navigation.meetingPath) {
+                    MeetingsView()
+                        .navigationDestination(for: MeetingRoute.self) { MeetingView(route: $0) }
+                }
             case .settings:
                 SettingsView()
             }
         }
+        .environment(navigation)
+        .environment(MeetingLibrary.shared)
     }
 }

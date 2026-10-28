@@ -1,0 +1,81 @@
+import Foundation
+import Testing
+@testable import Private_Meeting_Assistant
+
+struct MeetingStoreTests {
+    @Test func ftsQueryQuotesWords() {
+        #expect(MeetingStore.ftsQuery("  ") == nil)
+        #expect(MeetingStore.ftsQuery("pricing deck") == "\"pricing\" \"deck\"*")
+        #expect(MeetingStore.ftsQuery("say \"hi\" OR -x") == "\"say\" \"hi\" \"OR\" \"-x\"*")
+    }
+
+    @Test func meetingLifecycleAndSearch() throws {
+        let store = try MeetingStore.inMemory()
+        let start = Date(timeIntervalSince1970: 1_793_000_000)
+        let id = try store.createMeeting(title: "Pricing sync", startedAt: start)
+        _ = try store.insertSegment(meetingID: id, source: .system, startMs: 1_000, endMs: 3_000, text: "Priya will send the updated pricing deck.")
+        let mine = try store.insertSegment(meetingID: id, source: .mic, startMs: 4_000, endMs: 6_500, text: "Let's move the launch review to Thursday.")
+        try store.endMeeting(id, at: start.addingTimeInterval(10))
+
+        let meeting = try #require(try store.meeting(id))
+        #expect(meeting.title == "Pricing sync")
+        #expect(abs(meeting.startedAt.timeIntervalSince(start)) < 0.01)
+        #expect(meeting.segmentCount == 2)
+        #expect(meeting.durationMs == 6_500)
+
+        // Prefix search, stemming, and highlighted snippets.
+        let hits = try store.search("launch revi")
+        let hit = try #require(hits.first { $0.kind == .transcript })
+        #expect(hit.segmentID == mine && hit.source == .mic && hit.startMs == 4_000)
+        #expect(hit.snippet.contains(MeetingStore.highlightStart + "launch" + MeetingStore.highlightEnd))
+        #expect(try store.search("pricing").contains { $0.kind == .titleOrSummary })
+
+        // Renaming updates title search; deleting a line removes it from search.
+        try store.renameMeeting(id, to: "Launch planning")
+        #expect(try store.search("planning").contains { $0.kind == .titleOrSummary && $0.meetingID == id })
+        try store.deleteSegment(mine)
+        #expect(try store.search("thursday").isEmpty)
+
+        // Deleting the meeting removes its transcript and its search entries.
+        try store.deleteMeeting(id)
+        #expect(try store.meetings().isEmpty)
+        #expect(try store.search("priya").isEmpty)
+        #expect(try store.search("planning").isEmpty)
+    }
+
+    @Test func markdownExport() {
+        let meeting = Meeting(
+            id: 1, title: "Sync", startedAt: Date(), endedAt: nil,
+            summary: MeetingSummary(summary: "We met.", decisions: ["Ship it"], actionItems: [.init(text: "Write docs", owner: "Me", done: true)]),
+            summaryStatus: "done", segmentCount: 1, durationMs: 61_000
+        )
+        let md = TranscriptExport.markdown(meeting, [Segment(id: 1, meetingID: 1, source: .system, startMs: 61_000, endMs: 62_000, text: "Hi")])
+        #expect(md.contains("# Sync"))
+        #expect(md.contains("2 min"))
+        #expect(md.contains("- [x] Write docs — *Me*"))
+        #expect(md.contains("**[01:01] Them:** Hi"))
+        #expect(TranscriptExport.fileName("../..") == "-")
+        #expect(TranscriptExport.fileName("Q4: plan/review") == "Q4- plan-review")
+    }
+
+    /// Opens a copy of the prototype's database, if this Mac has one, to check the schemas match.
+    @Test(.enabled(if: FileManager.default.fileExists(atPath: MeetingStore.defaultURL.path)))
+    func readsThePrototypeDatabase() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for suffix in ["", "-wal", "-shm"] {
+            let source = URL(fileURLWithPath: MeetingStore.defaultURL.path + suffix)
+            if FileManager.default.fileExists(atPath: source.path) {
+                try FileManager.default.copyItem(at: source, to: dir.appending(path: "meetings.sqlite" + suffix))
+            }
+        }
+        let store = try MeetingStore.open(at: dir.appending(path: "meetings.sqlite"))
+        let meetings = try store.meetings()
+        #expect(meetings.allSatisfy { $0.startedAt != .distantPast })
+        for m in meetings where m.summaryStatus == "done" {
+            #expect(m.summary != nil, "summary of meeting \(m.id) didn't decode")
+        }
+        print("prototype database: \(meetings.count) meetings, \(meetings.map(\.segmentCount).reduce(0, +)) lines")
+    }
+}

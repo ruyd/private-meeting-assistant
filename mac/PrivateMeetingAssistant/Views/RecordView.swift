@@ -1,11 +1,14 @@
+import AppKit
 import SwiftUI
 
 struct RecordView: View {
+    let recorder: Recorder
+    @Environment(AppNavigation.self) private var navigation
     @AppStorage("micDeviceUID") private var savedMicUID = ""
     @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
     @AppStorage(SettingsKeys.language) private var language = "auto"
     @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
-    @State private var recorder = Recorder()
+    @State private var title = ""
     @State private var apps: [(target: SystemAudioTarget, isPlaying: Bool)] = []
     @State private var devices: [InputDevice] = []
     /// Shown before recording starts, e.g. the lid is closed and the built-in mic is selected.
@@ -23,12 +26,25 @@ struct RecordView: View {
             TranscriptView(recorder: recorder)
         }
         .navigationTitle("Record")
+        .toolbar {
+            ToolbarItem {
+                Button("Copy Transcript", systemImage: "doc.on.doc") {
+                    copy(TranscriptExport.plainText(recorder.lines.map { ($0.source, $0.startMs, $0.text) }))
+                }
+                .disabled(recorder.lines.isEmpty)
+                .help("Copy the transcript as text")
+            }
+        }
         .task { await refreshSources() }
-        .onDisappear { Task { await recorder.stop() } }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
+            TextField("Meeting title", text: $title, prompt: Text(Self.defaultTitle()))
+                .textFieldStyle(.roundedBorder)
+                .font(.title3)
+                .frame(maxWidth: 480)
+                .disabled(recorder.phase != .idle)
             HStack(spacing: 16) {
                 recordButton
                 if let startedAt = recorder.startedAt {
@@ -81,7 +97,13 @@ struct RecordView: View {
         switch recorder.phase {
         case .idle:
             Button {
-                Task { await recorder.start(model: model, language: language == "auto" ? nil : language, removeEcho: removeEcho) }
+                let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                Task {
+                    await recorder.start(
+                        title: name.isEmpty ? Self.defaultTitle() : name, model: model,
+                        language: language == "auto" ? nil : language, removeEcho: removeEcho
+                    )
+                }
             } label: {
                 Label("Record", systemImage: "record.circle")
             }
@@ -94,7 +116,10 @@ struct RecordView: View {
             Text("Loading \(model.name)… The first time can take a minute or two.").foregroundStyle(.secondary)
         case .recording:
             Button {
-                Task { await recorder.stop() }
+                Task {
+                    await recorder.stop()
+                    title = ""
+                }
             } label: {
                 Label("Stop", systemImage: "stop.circle")
             }
@@ -106,6 +131,12 @@ struct RecordView: View {
     }
 
     @ViewBuilder private var notices: some View {
+        if recorder.phase == .idle, let id = recorder.meetingID, !recorder.lines.isEmpty {
+            HStack {
+                Label("Saved to Meetings.", systemImage: "checkmark.circle").foregroundStyle(.secondary)
+                Button("Open Meeting") { navigation.open(MeetingRoute(meetingID: id)) }
+            }
+        }
         if !store.downloaded.contains(model.id) {
             ModelDownloadRow(model: model)
         }
@@ -118,6 +149,10 @@ struct RecordView: View {
         ForEach(session.warnings, id: \.self) { warning in
             Label(warning, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
         }
+    }
+
+    static func defaultTitle(_ date: Date = Date()) -> String {
+        "Meeting \(date.formatted(.dateTime.month(.abbreviated).day().hour().minute()))"
     }
 
     /// The picker's choice, saved across launches; "" follows the system default.
@@ -198,23 +233,40 @@ private struct TranscriptView: View {
     }
 }
 
-private struct TranscriptRow: View {
-    let line: TranscriptLine
+/// One transcript line: time, speaker and text.
+struct TranscriptRow: View {
+    let source: AudioSource
+    let startMs: Int
+    let text: String
+    var isFocused = false
+
+    init(line: TranscriptLine) {
+        self.init(source: line.source, startMs: line.startMs, text: line.text)
+    }
+
+    init(source: AudioSource, startMs: Int, text: String, isFocused: Bool = false) {
+        self.source = source
+        self.startMs = startMs
+        self.text = text
+        self.isFocused = isFocused
+    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(Duration.milliseconds(line.startMs).formatted(.time(pattern: .minuteSecond)))
+            Text(TranscriptExport.timestamp(startMs))
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .trailing)
-            Text(line.source.speaker)
+                .frame(width: 52, alignment: .trailing)
+            Text(source.speaker)
                 .font(.callout.bold())
-                .foregroundStyle(line.source == .mic ? .blue : .orange)
+                .foregroundStyle(source == .mic ? .blue : .orange)
                 .frame(width: 44, alignment: .leading)
-            Text(line.text)
+            Text(text)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.vertical, isFocused ? 4 : 0)
+        .background(isFocused ? Color.yellow.opacity(0.25) : .clear, in: .rect(cornerRadius: 4))
     }
 }
 
@@ -279,4 +331,9 @@ private struct LevelRow: View {
             .animation(.linear(duration: 0.1), value: value)
         }
     }
+}
+
+func copy(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
 }

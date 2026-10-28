@@ -84,12 +84,15 @@ extension CaptureSelfTest {
     static func transcribe(seconds: Double, to dir: URL, args: [String]) async {
         let modelID = args.firstIndex(of: "--model").flatMap { args.count > $0 + 1 ? args[$0 + 1] : nil }
         let model = modelID.flatMap(SpeechModel.find) ?? .recommended
-        let recorder = Recorder()
+        // Saves to its own database in the output folder, never the real archive.
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let store = try? MeetingStore.open(at: dir.appending(path: "meetings.sqlite"))
+        let recorder = Recorder(library: MeetingLibrary(store: store))
         if let a = args.firstIndex(of: "--app"), args.count > a + 1 {
             recorder.capture.target = .app(bundleID: args[a + 1], name: args[a + 1])
         }
         let clock = ContinuousClock.now
-        await recorder.start(model: model, language: "en", removeEcho: !args.contains("--keep-echo"))
+        await recorder.start(title: "Self-test", model: model, language: "en", removeEcho: !args.contains("--keep-echo"))
         log.notice("transcribe test: started in \(ContinuousClock.now - clock, privacy: .public), phase \(String(describing: recorder.phase), privacy: .public), error \(recorder.error ?? "none", privacy: .public)")
         try? await Task.sleep(for: .seconds(seconds))
         let stopClock = ContinuousClock.now
@@ -97,8 +100,11 @@ extension CaptureSelfTest {
         let lines = recorder.lines.map {
             ["speaker": $0.source.speaker, "startMs": $0.startMs, "endMs": $0.endMs, "text": $0.text] as [String: Any]
         }
+        let saved = recorder.meetingID.flatMap { try? store?.segments(of: $0) } ?? []
         let summary: [String: Any] = [
             "model": model.id,
+            "savedLines": saved.count,
+            "savedMatchesScreen": saved.map(\.text) == recorder.lines.map(\.text),
             "finishSeconds": Double((ContinuousClock.now - stopClock).components.seconds),
             "lines": lines,
             "warnings": recorder.capture.warnings,
