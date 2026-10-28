@@ -1,7 +1,8 @@
 import Foundation
 
-/// Made-up meetings shown in the list for working on its look, in debug builds launched with
-/// `-sampleMeetings YES`. They're never saved, and opening one shows "Meeting not found".
+/// Made-up meetings shown in the list instead of the real ones, for working on its look and for
+/// screenshots, in debug builds launched with `-sampleMeetings YES`. They're never saved, and opening
+/// one shows "Meeting not found".
 enum SampleMeetings {
     /// The app a sample was recorded from (nil: voice only).
     static func app(of id: Int64) -> String? { apps[id] }

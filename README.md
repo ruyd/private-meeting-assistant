@@ -1,65 +1,115 @@
 # Private Meeting Assistant
 
-A macOS desktop app that transcribes your meetings live, then writes the summary and action items into a searchable archive. Everything runs on your Mac.
+A native macOS app that transcribes your meetings live, then writes the summary, decisions and action items. Everything runs on your Mac, and every meeting is a folder of Markdown files you own.
 
-- **Works with any call app** (Zoom, Meet, Teams, FaceTime, in person). It records your microphone (**Me**) and the Mac's audio output (**Them**), so no bot joins the meeting.
-- **Live transcription** with [whisper.cpp](https://github.com/ggerganov/whisper.cpp), using Metal on Apple Silicon.
-- **Summaries, decisions and action items** come from a local model running in [Ollama](https://ollama.com).
-- **Searchable archive** in SQLite with FTS5. Search covers transcripts, summaries and titles, and you can export any meeting to Markdown.
-- **Nothing leaves the machine.** The only network traffic is a one-time download of the speech model from Hugging Face, plus requests to Ollama on `localhost`.
+![The app: meeting list on the left, new recording on the right](docs/images/app-home.png)
+
+## Why it exists
+
+A use case for AI-assisted software development: a small, focused app, built largely by an AI coding agent, that removes a recurring software cost and solves real privacy problems.
+
+- **Confidential meetings can't go to the cloud.** Board, executive and C-suite discussions often can't be uploaded to a third-party transcription service. Here, recording, transcription and summaries all run on the Mac, and nothing is uploaded.
+- **One archive instead of several.** Meet, Zoom and Teams each keep their own recordings and transcripts, and in-person meetings usually aren't captured at all. This app records any of them the same way, into one searchable archive of plain files.
+- **Built for strict privacy requirements.** Legal and HR teams need to control exactly where sensitive conversations are stored and who can reach them. Meetings stay in a folder you choose, as ordinary files you can keep on encrypted or managed storage, back up, or delete under your own retention rules.
+- **No per-seat subscription.** Recording, transcription and AI summaries are usually paid add-ons or separate subscriptions, and across a company those can add up to thousands a year. This app uses free, open models running on Macs people already have.
+
+- **Works with any call app** (Zoom, Meet, Teams, FaceTime, Slack, WhatsApp, in person). It records your microphone as **Me** and the call's audio as **Them**, so no bot joins the meeting. Pick one app to listen to, all system audio, or the microphone only.
+- **Live transcription** with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) on the Mac's GPU (Metal). Models load in well under a second.
+- **No echo without headphones.** When your speakers play the other side, your mic hears them too. Echo cancellation (SpeexDSP) plus an echo gate keeps their words out of "Me".
+- **Summaries, decisions and action items** from a local model in [Ollama](https://ollama.com): your own Ollama if it's running, or a private copy the app downloads on request. Cloud models are never used.
+- **Meetings are files.** Each meeting is a folder (`Subject - 2026-10-28 14.30/`) with `transcript.md`, `summary.md` and any screenshots you took, in a folder you choose (`~/Meetings` by default). A local index powers the list and full-text search.
+- **Screenshots of the meeting app** during a recording (⇧⌘S), saved into the meeting folder and placed in the transcript where they were taken. They only ever capture the app you're recording, never the rest of your screen.
+- **Nothing leaves your Mac.** The only network access is downloading models (speech models from Hugging Face; Ollama and summary models if you ask for them) and talking to Ollama on `localhost`.
+
+## Design
+
+The current UI started as a design: the meeting list beside the recording panel, and a live-transcript view while recording.
+
+![Design: home, with meeting cards on the left and the new-recording panel on the right](docs/images/design-home.png)
+
+![Design: recording, with the live transcript, a screenshot in line and recording actions](docs/images/design-recording.png)
+
+The app follows the first design closely. From the recording design, the live transcript, screenshots and Stop are built; record video, record audio, the live/delayed transcript switch, bookmarks and pause aren't yet.
 
 ## Requirements
 
-- macOS 13+ (Apple Silicon recommended)
-- [Rust](https://rustup.rs), Node 20+, CMake, and the Xcode Command Line Tools
-- [Ollama](https://ollama.com) with at least one model pulled, e.g. `ollama pull gemma4:12b`
+- macOS 26 on Apple Silicon (16 GB of memory or more recommended)
+- To build: Xcode 26 and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 
-## Run
-
-```bash
-npm install
-npm run tauri dev
-```
-
-On first launch, open **Settings** and download a Whisper model (`base.en` is a good start). macOS will ask for **Microphone** and **Screen & System Audio Recording** permission the first time you record. When you run it in development, the permission is granted to your terminal app instead.
-
-Build a standalone `.app` / `.dmg`:
+## Build and run
 
 ```bash
-npm run tauri build
+cd mac
+xcodegen generate
+open PrivateMeetingAssistant.xcodeproj
 ```
+
+`xcodegen generate` first runs `mac/scripts/fetch-whisper.sh`, which downloads whisper.cpp's prebuilt macOS framework (pinned to one release and checked against its SHA-256) into `mac/Vendor/`.
+
+Builds are signed with a Developer ID certificate so macOS keeps the Microphone and System Audio permissions across rebuilds. To build with your own Apple account, set `DEVELOPMENT_TEAM` in `mac/project.yml` and `teamID` in `mac/ExportOptions.plist` to your team ID.
+
+On first launch, a short setup walks through where meetings are saved, the microphone and system audio permissions, and the downloads (a speech model, and Ollama plus a summary model unless yours can be used).
+
+## Models
+
+| | Options | Default |
+|---|---|---|
+| Speech (whisper.cpp) | Base (English) 148 MB, Small (English) 488 MB, Large v3 Turbo 574 MB | Large v3 Turbo |
+| Summaries (Ollama) | Any local model in your Ollama, or one downloaded into the app's own | Gemma 4 12B with 24 GB of memory or more, Gemma 3 4B otherwise |
+
+The speech model is freed while a summary is written, so the two never compete for memory.
 
 ## Tests
 
 ```bash
-cd src-tauri
-cargo test                                  # unit tests: DB/search, resampler, VAD, export, parsing
-cargo test --release -- --ignored --nocapture   # end-to-end: real Whisper model + local Ollama
+cd mac
+xcodebuild -project PrivateMeetingAssistant.xcodeproj -scheme PrivateMeetingAssistant -destination 'platform=macOS' test
 ```
 
-The end-to-end tests need the `base.en` model downloaded (through the app or Settings) and Ollama running with the configured summary model.
+Unit tests cover capture helpers, voice detection, echo removal, storage and search, and summary parsing. The transcription tests run the real model once one is downloaded.
+
+Debug builds also accept command-line self-tests: `--capture-test`, `--transcribe-test`, `--prepare-model` and `--install-ollama` (see `mac/PrivateMeetingAssistant/Debug/CaptureSelfTest.swift`), and `-sampleMeetings YES` shows made-up meetings instead of yours, for screenshots.
+
+## Release
+
+```bash
+mac/scripts/release.sh
+```
+
+Archives, signs, notarizes and staples the app, then wraps it in a signed and notarized DMG in `mac/build/release/`. See the comment at the top of the script for the one-time notarization setup.
 
 ## How it works
 
 ```
-mic (cpal) ─────┐                       ┌─> Whisper worker ─> SQLite (+FTS5) ─> UI "segment" events
-                ├─> resample to 16 kHz ─> per-source VAD ─┘
-system (SCK) ───┘                       (utterances, ≤15 s)
-stop ─> flush ─> Ollama summary (map-reduce for long meetings) ─> stored JSON + search index
+microphone ──> echo canceller ──> echo gate ──┐
+  (Me)            (SpeexDSP)                  ├─> voice detection ─> whisper.cpp ─> transcript.md + search index
+call audio ───────────────────────────────────┘    (per source)        (Metal)
+  (Them, Core Audio process tap)
+
+stop ─> Ollama summary (long meetings in parts) ─> summary.md + search index
 ```
 
-| Path | What it does |
+| Path (`mac/PrivateMeetingAssistant/`) | What it does |
 |---|---|
-| `src-tauri/src/audio/` | Mic capture (cpal), system audio (ScreenCaptureKit), streaming windowed-sinc resampler |
-| `src-tauri/src/transcribe/` | Energy VAD segmenter, Whisper worker thread, model download |
-| `src-tauri/src/recorder.rs` | Recording session: wires capture → VAD → Whisper → DB/events, optional WAV |
-| `src-tauri/src/llm/ollama.rs` | Summary / decisions / action items via Ollama structured output |
-| `src-tauri/src/db/` | SQLite schema, full-text search |
-| `src/` | React UI: Record, Meetings (search), Meeting detail, Settings |
+| `Audio/` | Microphone capture, system audio through a Core Audio process tap, device picking, levels |
+| `Transcription/` | Voice detection, echo cancellation and gate, whisper.cpp transcriber, speech model downloads, the recorder |
+| `Summaries/` | Ollama engine (yours or downloaded), summarizer with structured output |
+| `Storage/` | Meeting folders and Markdown, the SQLite index with full-text search, uninstall |
+| `Screen/` | Screenshots of the recorded app's window |
+| `Views/` | SwiftUI: meeting list, recording panel and live view, meeting page, setup, settings |
+| `Debug/` | Command-line self-tests and sample meetings (debug builds only) |
 
-Data (database, models, optional audio) lives in `~/Library/Application Support/dev.ruy.private-meeting-assistant/`.
+App data (the index, models, a downloaded Ollama) lives in `~/Library/Application Support/dev.ruy.private-meeting-assistant/`; meetings live in the folder you choose.
 
 ## Known limitations
 
-- Speakers are split into **Me** and **Them** by audio source. Several remote participants all show up as "Them".
-- Without headphones, your speakers leak into the mic, so remote speech can also be transcribed as "Me".
+- Speakers are split into **Me** and **Them** by audio source, so several remote participants all appear as "Them".
+- Not on the Mac App Store yet: the app would first need App Sandbox changes (the meetings folder, the downloaded Ollama, uninstall).
+
+## The Tauri prototype
+
+The idea was first built as a cross-platform [Tauri](https://tauri.app) prototype (Rust and React), still in this repository (`src/`, `src-tauri/`). The native app replaced it; it isn't maintained. To run it: `npm install && npm run tauri dev` (needs Rust, Node 20+, CMake and Ollama).
+
+## License
+
+[MIT](LICENSE). whisper.cpp and GRDB are MIT licensed and SpeexDSP is BSD licensed; their licenses apply to those parts.

@@ -124,8 +124,9 @@ struct MeetingsView: View {
     private var pastMeetings: [Meeting] {
         let live = recorder.phase == .idle ? nil : recorder.meetingID
         let meetings = library.meetings.filter { $0.id != live }
+        // Sample mode shows only the samples, so screenshots for docs never include real meetings.
         let samples = SampleMeetings.all
-        return samples.isEmpty ? meetings : (meetings + samples).sorted { $0.startedAt > $1.startedAt }
+        return samples.isEmpty ? meetings : samples
     }
 
     private func sectionTitle(_ label: String) -> some View {
