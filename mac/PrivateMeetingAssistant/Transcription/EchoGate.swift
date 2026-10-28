@@ -25,9 +25,12 @@ struct EchoGate {
     private static let maxDelayFrames = 15
     /// Frames before and after the delay that can still be echo (jitter and room reverb).
     private static let reverbFrames = 5
-    private static let jitterFrames = 1
-    /// Mic frames wait this long (240 ms) so the far-end audio they might echo has arrived.
+    private static let jitterFrames = 2
+    /// Mic frames wait this long (240 ms) so the far-end audio they might echo has arrived…
     private static let holdFrames = 8
+    /// …or up to 1.2 s while the far end talks and the delay is still being learned, so the far end's
+    /// first words are gated too (the session's first transcript lines arrive a second later).
+    private static let learningHoldFrames = 40
     /// Loudness history kept for estimating the delay (6 s), and how often it's re-estimated: every
     /// 300 ms until found, so gating starts about a second into the far end's first words, then
     /// every second to follow changes (e.g. switching speakers).
@@ -37,8 +40,10 @@ struct EchoGate {
     private static let minDelayEvidence = 20
     /// A delay is trusted only if the loudness envelopes correlate at least this well.
     private static let minCorrelation: Float = 0.5
-    /// Your voice must be 6 dB above the predicted echo to count as you talking.
-    private static let nearEndMargin: Float = 4
+    /// Your voice must be 3 dB above the loudest typical echo to count as you talking. Real speakers
+    /// and rooms don't echo every sound equally, so the bar is set from the spread of measured echo
+    /// levels (90th percentile), not their median.
+    private static let nearEndMargin: Float = 2
     /// Once you're talking, keep passing audio for 150 ms so word endings aren't clipped.
     private static let nearEndHangover = 5
     /// Echo frames are turned down 60 dB: loud laptop-speaker echo reaches the mic at around -16 dBFS,
@@ -57,6 +62,8 @@ struct EchoGate {
     private var mic: [Float] = []
     /// Absolute sample index of `mic[0]`.
     private var micStart: Int?
+    /// Frames at the start of `mic` whose loudness is already in `micPower`.
+    private var measured = 0
     /// Echo delay in frames; nil until the far end has talked enough to measure it.
     private(set) var delay: Int?
     private var framesSinceDelayEstimate = 0
@@ -65,11 +72,11 @@ struct EchoGate {
     /// For diagnostics: mic frames seen, frames with far-end audio nearby, frames gated, best correlation.
     private(set) var stats = (frames: 0, farEndFrames: 0, gated: 0, bestCorrelation: Float(-1), bestLag: -1)
 
-    /// Mic power relative to far-end power at the echo delay; nil until learned.
+    /// Mic power relative to far-end power at the echo delay, for nearly all echo (90th percentile);
+    /// nil until learned. Double talk, a minority of frames, mostly sits above it.
     var echoLevel: Float? {
         guard ratios.count >= Self.minRatios else { return nil }
-        // Median: echo-only frames dominate while the far end talks; double talk only raises a minority.
-        return ratios.sorted()[ratios.count / 2]
+        return ratios.sorted()[ratios.count * 9 / 10]
     }
 
     /// Records far-end (system audio) samples starting at absolute sample `position`.
@@ -97,81 +104,128 @@ struct EchoGate {
             mic = samples
             return flushed
         }
-        if micStart == nil { micStart = position }
+        if micStart == nil {
+            micStart = position
+            measured = 0
+        }
         mic.append(contentsOf: samples)
-
         guard let start = micStart else { return nil }
-        let ready = max(mic.count / Self.frame - Self.holdFrames, 0) * Self.frame
-        guard ready > 0 else { return nil }
-        var out = Array(mic[0..<ready])
-        for offset in stride(from: 0, to: ready, by: Self.frame) {
-            if isEcho(out[offset..<(offset + Self.frame)], frame: (start + offset) / Self.frame) {
-                for i in offset..<(offset + Self.frame) { out[i] *= Self.attenuation }
+
+        // Measure loudness as audio arrives, so the delay can be learned before frames are released.
+        while (measured + 1) * Self.frame <= mic.count {
+            let offset = measured * Self.frame
+            let index = (start + offset) / Self.frame
+            var power: Float = 0
+            for s in mic[offset..<(offset + Self.frame)] { power += s * s }
+            micPower[index] = power / Float(Self.frame)
+            measured += 1
+            framesSinceDelayEstimate += 1
+            if framesSinceDelayEstimate >= (delay == nil ? Self.delayIntervalSearching : Self.delayInterval) {
+                framesSinceDelayEstimate = 0
+                // The newest frames' far-end audio may still be on its way.
+                estimateDelay(upTo: index - Self.holdFrames)
             }
         }
-        mic.removeFirst(ready)
-        micStart = start + ready
-        prune(before: (start + ready) / Self.frame - Self.historyFrames - Self.maxDelayFrames)
-        return Output(position: start, samples: out)
+
+        let newest = (start + measured * Self.frame) / Self.frame
+        let learning = delay == nil && ((newest - Self.learningHoldFrames)...newest).contains { (farEnd[$0] ?? 0) > Self.farEndActive }
+        let ready = max(measured - (learning ? Self.learningHoldFrames : Self.holdFrames), 0)
+        guard ready > 0 else { return nil }
+        return release(frames: ready)
     }
 
-    /// Returns the buffered mic audio ungated (call when recording stops).
+    /// Returns the buffered mic audio (call when recording stops), gated as far as it's been measured.
     mutating func flush() -> Output? {
         defer {
             mic.removeAll()
             micStart = nil
+            measured = 0
         }
         guard let start = micStart, !mic.isEmpty else { return nil }
-        return Output(position: start, samples: mic)
+        let rest = mic.count - measured * Self.frame
+        let gated = measured > 0 ? release(frames: measured) : nil
+        return Output(position: start, samples: (gated?.samples ?? []) + mic.suffix(rest))
     }
 
-    private mutating func isEcho(_ frame: ArraySlice<Float>, frame index: Int) -> Bool {
-        var power: Float = 0
-        for s in frame { power += s * s }
-        power /= Float(frame.count)
-        micPower[index] = power
-        stats.frames += 1
-
-        framesSinceDelayEstimate += 1
-        if framesSinceDelayEstimate >= (delay == nil ? Self.delayIntervalSearching : Self.delayInterval) {
-            framesSinceDelayEstimate = 0
-            estimateDelay(upTo: index)
+    /// Gates and removes the first `frames` measured frames of the buffer.
+    private mutating func release(frames: Int) -> Output? {
+        guard let start = micStart else { return nil }
+        let count = frames * Self.frame
+        var out = Array(mic[0..<count])
+        for offset in stride(from: 0, to: count, by: Self.frame) {
+            let index = (start + offset) / Self.frame
+            if isEcho(power: micPower[index] ?? 0, frame: index) {
+                for i in offset..<(offset + Self.frame) { out[i] *= Self.attenuation }
+            }
         }
+        mic.removeFirst(count)
+        micStart = start + count
+        measured -= frames
+        prune(before: (start + count) / Self.frame - Self.historyFrames - Self.maxDelayFrames)
+        return Output(position: start, samples: out)
+    }
+
+    private mutating func isEcho(power: Float, frame index: Int) -> Bool {
+        stats.frames += 1
         if hangover > 0 { hangover -= 1 }
         guard let delay else { return false }
 
-        // The far end's loudest moment that can still be echoing in this frame.
-        let source = index - delay
-        var farEndPeak: Float = 0
-        for f in (source - Self.reverbFrames)...(source + Self.jitterFrames) {
-            farEndPeak = max(farEndPeak, farEnd[f] ?? 0)
-        }
+        let farEndPeak = echoPeak(into: index, delay: delay)
         guard farEndPeak > Self.farEndActive else { return false }
         stats.farEndFrames += 1
 
-        if let direct = farEnd[source], direct > Self.farEndActive {
-            ratios.append(power / direct)
+        // Ratios are measured against the same window as the decision, so pauses between words (quiet
+        // far end, room still echoing) don't inflate them. Only frames judged to be echo are added:
+        // your own voice would otherwise teach the gate that echo is louder than it is.
+        func learn() {
+            ratios.append(power / farEndPeak)
             if ratios.count > Self.maxRatios { ratios.removeFirst() }
         }
-        guard let echoLevel else { return false }
-        if power > Self.nearEndMargin * echoLevel * farEndPeak {
+        guard let echoLevel else {
+            learn()
+            return false
+        }
+
+        // You're talking if this frame and a neighbour are clearly louder than the echo could be:
+        // speech is sustained, while an echo louder than usual is a single frame. (The next frame's
+        // loudness is known because frames are held before release.)
+        func louderThanEcho(_ f: Int) -> Bool {
+            guard let p = micPower[f] else { return false }
+            return p > Self.nearEndMargin * echoLevel * echoPeak(into: f, delay: delay)
+        }
+        if louderThanEcho(index) && (louderThanEcho(index - 1) || louderThanEcho(index + 1)) {
             hangover = Self.nearEndHangover
             return false
         }
-        if hangover == 0 { stats.gated += 1 }
-        return hangover == 0
+        guard hangover == 0 else { return false }
+        learn()
+        stats.gated += 1
+        return true
+    }
+
+    /// The far end's loudest moment that can still be echoing in mic frame `index`.
+    private func echoPeak(into index: Int, delay: Int) -> Float {
+        let source = index - delay
+        var peak: Float = 0
+        for f in (source - Self.reverbFrames)...(source + Self.jitterFrames) {
+            peak = max(peak, farEnd[f] ?? 0)
+        }
+        return peak
     }
 
     /// Finds the lag at which the mic's loudness envelope best follows the far end's.
     private mutating func estimateDelay(upTo index: Int) {
         let frames = (index - Self.historyFrames + 1)...index
-        func level(_ p: Float?) -> Float { log10(max(p ?? 0, 1e-9)) }
+        // Silence is clamped at the "far end active" level so quiet gaps don't dominate the correlation.
+        func level(_ p: Float) -> Float { log10(max(p, Self.farEndActive)) }
         var best: (lag: Int, correlation: Float)?
         for lag in 0...Self.maxDelayFrames {
             var x: [Float] = [], y: [Float] = []
-            for f in frames where (farEnd[f - lag] ?? 0) > Self.farEndActive || (micPower[f] ?? 0) > Self.farEndActive {
-                guard let m = micPower[f] else { continue }
-                x.append(level(farEnd[f - lag]))
+            // Frames without far-end data (before the tap started delivering) are unknown, not silent.
+            for f in frames {
+                guard let m = micPower[f], let far = farEnd[f - lag] else { continue }
+                guard far > Self.farEndActive || m > Self.farEndActive else { continue }
+                x.append(level(far))
                 y.append(level(m))
             }
             guard x.count >= Self.minDelayEvidence, let c = Self.correlation(x, y) else { continue }
@@ -183,8 +237,9 @@ struct EchoGate {
             // Levels measured at the old delay don't apply; measure them from the history at the new one
             // so gating starts now rather than after another half second of far-end speech.
             ratios = frames.compactMap { f in
-                guard let m = micPower[f], let far = farEnd[f - best.lag], far > Self.farEndActive else { return nil }
-                return m / far
+                guard let m = micPower[f] else { return nil }
+                let peak = echoPeak(into: f, delay: best.lag)
+                return peak > Self.farEndActive ? m / peak : nil
             }.suffix(Self.maxRatios)
         }
     }

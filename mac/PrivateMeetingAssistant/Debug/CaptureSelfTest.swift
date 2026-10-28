@@ -110,11 +110,23 @@ extension CaptureSelfTest {
     }
 }
 
+/// Keeps each source on the meeting timeline, like the transcription pipeline does: gaps in delivery
+/// (system audio pauses while nothing plays) are filled with silence, so the WAVs line up.
 private final class ChunkRecorder: Sendable {
     private let samples = Mutex<[AudioSource: [Float]]>([:])
+    private let startHostTime = mach_absolute_time()
 
     func append(_ chunk: AudioChunk) {
-        samples.withLock { $0[chunk.source, default: []].append(contentsOf: chunk.samples) }
+        let seconds = AVAudioTime.seconds(forHostTime: chunk.hostTime) - AVAudioTime.seconds(forHostTime: startHostTime)
+        let position = max(Int(seconds * MonoResampler.sampleRate), 0)
+        samples.withLock {
+            var track = $0[chunk.source] ?? []
+            if position > track.count + Int(MonoResampler.sampleRate * 0.2) {
+                track += [Float](repeating: 0, count: position - track.count)
+            }
+            track += chunk.samples
+            $0[chunk.source] = track
+        }
     }
 
     func write(to dir: URL, warnings: [String]) {
