@@ -44,6 +44,8 @@ struct ContentView: View {
     @State private var navigation = AppNavigation()
     /// Lives here, not in the Record page, so recording continues while you browse other pages.
     @State private var recorder = Recorder()
+    @AppStorage(SetupView.completedKey) private var setupCompleted = false
+    @State private var showSetup = false
 
     var body: some View {
         NavigationSplitView {
@@ -72,5 +74,13 @@ struct ContentView: View {
         }
         .environment(navigation)
         .environment(MeetingLibrary.shared)
+        .onAppear { if !setupCompleted { showSetup = true } }
+        .sheet(isPresented: $showSetup) {
+            SetupView {
+                setupCompleted = true
+                showSetup = false
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: SetupView.reopen)) { _ in showSetup = true }
     }
 }

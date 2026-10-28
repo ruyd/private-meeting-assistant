@@ -106,6 +106,12 @@ struct SettingsView: View {
                 Text("Each meeting is a folder here, with transcript.md and summary.md. Changing the folder applies to new meetings; existing ones stay where they are. Uninstall moves the app, its speech models and settings to the Trash, and your meetings folder too if you uncheck the box.")
             }
 
+            Section {
+                Button("Run Setup Again…") { NotificationCenter.default.post(name: SetupView.reopen, object: nil) }
+            } footer: {
+                Text("Walks through the meetings folder, permissions and downloads again.")
+            }
+
             Section("About") {
                 LabeledContent("Version", value: version)
                 LabeledContent("Privacy", value: "Audio and transcripts stay on this Mac.")
