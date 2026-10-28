@@ -22,10 +22,28 @@ final class TranscriptionPipeline: Sendable {
     }
 
     /// A source that skips ahead by more than this stopped delivering for a while.
-    private static let gapToleranceSamples = Int(MonoResampler.sampleRate * 0.2)
+    fileprivate static let gapToleranceSamples = Int(MonoResampler.sampleRate * 0.2)
 
     private let startHostTime: UInt64
-    private let segmenters = Mutex<[AudioSource: Segmenter]>([:])
+    private struct State {
+        var segmenters: [AudioSource: Segmenter] = [:]
+        /// nil when echo removal is off (e.g. the user wears headphones and turned it off).
+        var echoGate: EchoGate?
+
+        /// Cuts `samples` (starting at absolute sample `position`) into utterances.
+        mutating func segment(_ source: AudioSource, _ samples: [Float], at position: Int) -> [Segmenter.Utterance] {
+            var segmenter = segmenters[source] ?? Segmenter()
+            var out: [Segmenter.Utterance] = []
+            if position > segmenter.position + TranscriptionPipeline.gapToleranceSamples, let ended = segmenter.skip(to: position) {
+                out.append(ended)
+            }
+            out += segmenter.push(samples)
+            segmenters[source] = segmenter
+            return out
+        }
+    }
+
+    private let state: Mutex<State>
     private let queued = Counter()
     private let jobs: AsyncStream<Job>.Continuation
     private let worker: Task<Void, Never>
@@ -36,11 +54,13 @@ final class TranscriptionPipeline: Sendable {
         transcriber: Transcriber,
         language: String?,
         startHostTime: UInt64,
+        removeEcho: Bool = true,
         onLine: @escaping @Sendable (TranscriptLine) -> Void,
         onBacklog: @escaping @Sendable (Int) -> Void
     ) {
         self.startHostTime = startHostTime
         self.onBacklog = onBacklog
+        state = Mutex(State(echoGate: removeEcho ? EchoGate() : nil))
         let (stream, continuation) = AsyncStream.makeStream(of: Job.self)
         jobs = continuation
         let queued = queued
@@ -67,25 +87,35 @@ final class TranscriptionPipeline: Sendable {
     /// Called from audio threads with every captured chunk.
     func append(_ chunk: AudioChunk) {
         let position = samplePosition(of: chunk.hostTime)
-        let utterances = segmenters.withLock { segmenters in
-            var segmenter = segmenters[chunk.source] ?? Segmenter()
-            var out: [Segmenter.Utterance] = []
-            if position > segmenter.position + Self.gapToleranceSamples, let ended = segmenter.skip(to: position) {
-                out.append(ended)
+        let utterances = state.withLock { state -> [Segmenter.Utterance] in
+            switch chunk.source {
+            case .system:
+                state.echoGate?.addFarEnd(chunk.samples, at: position)
+                return state.segment(.system, chunk.samples, at: position)
+            case .mic:
+                guard state.echoGate != nil else { return state.segment(.mic, chunk.samples, at: position) }
+                guard let gated = state.echoGate?.processMic(chunk.samples, at: position) else { return [] }
+                return state.segment(.mic, gated.samples, at: gated.position)
             }
-            out += segmenter.push(chunk.samples)
-            segmenters[chunk.source] = segmenter
-            return out
         }
         for u in utterances { enqueue(Job(source: chunk.source, utterance: u)) }
     }
 
     /// Transcribes speech still in progress, then waits for the queue to drain.
     func finish() async {
-        let remaining = segmenters.withLock { segmenters in
-            AudioSource.allCases.compactMap { source in
-                segmenters[source]?.flush().map { Job(source: source, utterance: $0) }
+        let remaining = state.withLock { state in
+            if let gate = state.echoGate {
+                let s = gate.stats
+                log.notice("echo gate: delay \(gate.delay ?? -1) frames, level \(gate.echoLevel ?? -1), frames \(s.frames), with far end \(s.farEndFrames), gated \(s.gated), best correlation \(s.bestCorrelation) at lag \(s.bestLag)")
             }
+            var jobs: [Job] = []
+            if let held = state.echoGate?.flush() {
+                jobs += state.segment(.mic, held.samples, at: held.position).map { Job(source: .mic, utterance: $0) }
+            }
+            for source in AudioSource.allCases {
+                if let last = state.segmenters[source]?.flush() { jobs.append(Job(source: source, utterance: last)) }
+            }
+            return jobs
         }
         remaining.forEach(enqueue)
         jobs.finish()

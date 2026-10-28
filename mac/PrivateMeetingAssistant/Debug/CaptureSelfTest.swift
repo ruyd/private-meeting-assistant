@@ -78,7 +78,7 @@ extension CaptureSelfTest {
 }
 
 extension CaptureSelfTest {
-    /// `--transcribe-test <seconds> <output-dir> [--model <variant>] [--app <bundle-id>]`: records with
+    /// `--transcribe-test <seconds> <output-dir> [--model <variant>] [--app <bundle-id>] [--keep-echo]`: records with
     /// live transcription and writes transcript.json (lines in order, with timing).
     @MainActor
     static func transcribe(seconds: Double, to dir: URL, args: [String]) async {
@@ -89,7 +89,7 @@ extension CaptureSelfTest {
             recorder.capture.target = .app(bundleID: args[a + 1], name: args[a + 1])
         }
         let clock = ContinuousClock.now
-        await recorder.start(model: model, language: "en")
+        await recorder.start(model: model, language: "en", removeEcho: !args.contains("--keep-echo"))
         log.notice("transcribe test: started in \(ContinuousClock.now - clock, privacy: .public), phase \(String(describing: recorder.phase), privacy: .public), error \(recorder.error ?? "none", privacy: .public)")
         try? await Task.sleep(for: .seconds(seconds))
         let stopClock = ContinuousClock.now

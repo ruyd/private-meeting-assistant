@@ -17,8 +17,9 @@ final class Recorder {
     @ObservationIgnored private var transcriber: Transcriber?
     @ObservationIgnored private var pipeline: TranscriptionPipeline?
 
-    /// `language` is an ISO code, or nil to detect it.
-    func start(model: SpeechModel, language: String?) async {
+    /// `language` is an ISO code, or nil to detect it. `removeEcho` keeps the other participants'
+    /// voices, heard by the mic through the speakers, out of "Me".
+    func start(model: SpeechModel, language: String?, removeEcho: Bool = true) async {
         guard phase == .idle else { return }
         error = nil
         guard ModelStore.isComplete(model) else {
@@ -44,6 +45,7 @@ final class Recorder {
             transcriber: transcriber,
             language: language,
             startHostTime: mach_absolute_time(),
+            removeEcho: removeEcho && capture.captureSystemAudio,
             onLine: { line in Task { @MainActor [weak self] in self?.insert(line) } },
             onBacklog: { count in Task { @MainActor [weak self] in self?.backlog = count } }
         )

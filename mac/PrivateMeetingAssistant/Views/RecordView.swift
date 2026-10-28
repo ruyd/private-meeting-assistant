@@ -4,6 +4,7 @@ struct RecordView: View {
     @AppStorage("micDeviceUID") private var savedMicUID = ""
     @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
     @AppStorage(SettingsKeys.language) private var language = "auto"
+    @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
     @State private var recorder = Recorder()
     @State private var apps: [(target: SystemAudioTarget, isPlaying: Bool)] = []
     @State private var devices: [InputDevice] = []
@@ -80,7 +81,7 @@ struct RecordView: View {
         switch recorder.phase {
         case .idle:
             Button {
-                Task { await recorder.start(model: model, language: language == "auto" ? nil : language) }
+                Task { await recorder.start(model: model, language: language == "auto" ? nil : language, removeEcho: removeEcho) }
             } label: {
                 Label("Record", systemImage: "record.circle")
             }

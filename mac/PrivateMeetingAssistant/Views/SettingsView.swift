@@ -5,11 +5,13 @@ import SwiftUI
 enum SettingsKeys {
     static let speechModel = "speechModel"
     static let language = "language"
+    static let removeEcho = "removeEcho"
 }
 
 struct SettingsView: View {
     @AppStorage(SettingsKeys.speechModel) private var modelID = SpeechModel.recommended.id
     @AppStorage(SettingsKeys.language) private var language = "auto"
+    @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
     @State private var micPermission = MicCapture.permission
     private let store = ModelStore.shared
 
@@ -42,6 +44,14 @@ struct SettingsView: View {
                 .disabled(englishOnly)
             } footer: {
                 if englishOnly { Text("English-only models always transcribe English.") }
+            }
+
+            Section {
+                Toggle("Remove speaker echo from my microphone", isOn: $removeEcho)
+            } header: {
+                Text("Recording")
+            } footer: {
+                Text("Without headphones, your mic also hears the other participants through the speakers. This keeps their voices out of “Me”, while everything you say still comes through. It learns your setup during the first second the others speak.")
             }
 
             Section("Permissions") {
