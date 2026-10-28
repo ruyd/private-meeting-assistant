@@ -1,0 +1,41 @@
+# Generates PrivateMeetingAssistant.xcodeproj. After editing, run: xcodegen generate
+name: PrivateMeetingAssistant
+options:
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: 7X36HVTXYB
+targets:
+  PrivateMeetingAssistant:
+    type: application
+    platform: macOS
+    sources: [PrivateMeetingAssistant]
+    info:
+      path: PrivateMeetingAssistant/Info.plist
+      properties:
+        CFBundleDisplayName: Private Meeting Assistant
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.productivity
+        NSMicrophoneUsageDescription: Private Meeting Assistant transcribes what you say in meetings. Audio never leaves this Mac.
+        NSAudioCaptureUsageDescription: Private Meeting Assistant transcribes the other participants in your calls. Audio never leaves this Mac.
+    entitlements:
+      path: PrivateMeetingAssistant/PrivateMeetingAssistant.entitlements
+      properties:
+        # Hardened Runtime blocks microphone input without this (it fails silently).
+        com.apple.security.device.audio-input: true
+    settings:
+      base:
+        PRODUCT_NAME: Private Meeting Assistant
+        # Same identifier as the Tauri prototype, so permissions and data carry over.
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ruy.private-meeting-assistant
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Manual
+        # One stable identity for every build keeps macOS privacy permissions across rebuilds.
+        CODE_SIGN_IDENTITY: Developer ID Application
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
