@@ -11,6 +11,8 @@ enum MeetingFiles {
     static let summaryFile = "summary.md"
     static let screenshotsFolder = "screenshots"
     static let voicesFolder = "voices"
+    static let audioFile = "audio.m4a"
+    static let videosFolder = "video"
 
     /// The folder chosen in setup or Settings; nil until chosen.
     static var root: URL? {
@@ -60,7 +62,9 @@ enum MeetingFiles {
 
     /// Writes transcript.md, and summary.md if the meeting has a summary (removing a stale one if not).
     static func write(_ meeting: Meeting, _ segments: [Segment], to folder: URL) throws {
-        try transcriptMarkdown(meeting, segments, screenshots: screenshots(in: folder)).write(to: folder.appending(path: transcriptFile), atomically: true, encoding: .utf8)
+        let hasAudio = FileManager.default.fileExists(atPath: folder.appending(path: audioFile).path)
+        try transcriptMarkdown(meeting, segments, screenshots: screenshots(in: folder), videos: videos(in: folder), hasAudio: hasAudio)
+            .write(to: folder.appending(path: transcriptFile), atomically: true, encoding: .utf8)
         let summaryURL = folder.appending(path: summaryFile)
         if let summary = meeting.summary {
             try summaryMarkdown(meeting, summary).write(to: summaryURL, atomically: true, encoding: .utf8)
@@ -69,21 +73,31 @@ enum MeetingFiles {
         }
     }
 
-    /// The transcript, with each screenshot placed where it was taken.
-    static func transcriptMarkdown(_ meeting: Meeting, _ segments: [Segment], screenshots: [MeetingScreenshot] = []) -> String {
+    /// The transcript, with each screenshot and video placed where it was taken, and a link to the
+    /// audio recording if there is one.
+    static func transcriptMarkdown(
+        _ meeting: Meeting, _ segments: [Segment], screenshots: [MeetingScreenshot] = [], videos: [MeetingScreenshot] = [],
+        hasAudio: Bool = false
+    ) -> String {
         var out = "# \(meeting.title)\n\n*\(heading(meeting))*\n\n" + participantsMarkdown(meeting)
-        var shots = screenshots[...]
-        func image(_ shot: MeetingScreenshot) -> String {
-            "![Screenshot at \(TranscriptExport.timestamp(shot.atMs))](<\(screenshotsFolder)/\(shot.url.lastPathComponent)>)\n\n"
+        if hasAudio { out += "*Audio: [\(audioFile)](<\(audioFile)>)*\n\n" }
+        // Screenshots and videos, in meeting order.
+        var media = (screenshots.map { ($0, false) } + videos.map { ($0, true) }).sorted { $0.0.atMs < $1.0.atMs }[...]
+        func embed(_ item: (MeetingScreenshot, Bool)) -> String {
+            let (file, isVideo) = item
+            let time = TranscriptExport.timestamp(file.atMs)
+            return isVideo
+                ? "*Video from \(time): [\(file.url.lastPathComponent)](<\(videosFolder)/\(file.url.lastPathComponent)>)*\n\n"
+                : "![Screenshot at \(time)](<\(screenshotsFolder)/\(file.url.lastPathComponent)>)\n\n"
         }
         for s in segments {
-            while let shot = shots.first, shot.atMs <= s.startMs {
-                out += image(shot)
-                shots.removeFirst()
+            while let item = media.first, item.0.atMs <= s.startMs {
+                out += embed(item)
+                media.removeFirst()
             }
             out += "**[\(TranscriptExport.timestamp(s.startMs))] \(s.speaker.isEmpty ? s.source.speaker : s.speaker):** \(s.text)\n\n"
         }
-        for shot in shots { out += image(shot) }
+        for item in media { out += embed(item) }
         return out
     }
 
@@ -116,26 +130,44 @@ enum MeetingFiles {
     /// Saves a screenshot in the meeting's screenshots/ folder, named by when it was taken in the meeting
     /// ("00.13.21.png") so the folder sorts in meeting order.
     static func saveScreenshot(_ png: Data, at ms: Int, in folder: URL) throws -> MeetingScreenshot {
-        let dir = folder.appending(path: screenshotsFolder, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let s = max(ms, 0) / 1000
-        let base = String(format: "%02d.%02d.%02d", s / 3600, (s / 60) % 60, s % 60)
-        var url = dir.appending(path: "\(base).png")
-        var n = 2
-        while FileManager.default.fileExists(atPath: url.path) {
-            url = dir.appending(path: "\(base) (\(n)).png")
-            n += 1
-        }
+        let url = try timedFile(at: ms, in: folder.appending(path: screenshotsFolder, directoryHint: .isDirectory), extension: "png")
         try png.write(to: url)
         return MeetingScreenshot(url: url, atMs: ms)
     }
 
+    /// Where a video started `ms` into the meeting goes: video/00.13.21.mp4.
+    static func newVideo(at ms: Int, in folder: URL) throws -> URL {
+        try timedFile(at: ms, in: folder.appending(path: videosFolder, directoryHint: .isDirectory), extension: "mp4")
+    }
+
+    /// A file in `dir` named by its time in the meeting, adding " (2)", " (3)"… if taken.
+    private static func timedFile(at ms: Int, in dir: URL, extension ext: String) throws -> URL {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let s = max(ms, 0) / 1000
+        let base = String(format: "%02d.%02d.%02d", s / 3600, (s / 60) % 60, s % 60)
+        var url = dir.appending(path: "\(base).\(ext)")
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = dir.appending(path: "\(base) (\(n)).\(ext)")
+            n += 1
+        }
+        return url
+    }
+
     /// The meeting's screenshots in meeting order; the time comes from the file name.
     static func screenshots(in folder: URL) -> [MeetingScreenshot] {
-        let dir = folder.appending(path: screenshotsFolder, directoryHint: .isDirectory)
+        timedFiles(in: folder.appending(path: screenshotsFolder, directoryHint: .isDirectory), extension: "png")
+    }
+
+    /// The meeting's videos in meeting order, by when each started.
+    static func videos(in folder: URL) -> [MeetingScreenshot] {
+        timedFiles(in: folder.appending(path: videosFolder, directoryHint: .isDirectory), extension: "mp4")
+    }
+
+    private static func timedFiles(in dir: URL, extension ext: String) -> [MeetingScreenshot] {
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         return files
-            .filter { $0.pathExtension.lowercased() == "png" }
+            .filter { $0.pathExtension.lowercased() == ext }
             .compactMap { url -> MeetingScreenshot? in
                 let parts = url.lastPathComponent.prefix(8).split(separator: ".").compactMap { Int($0) }
                 guard parts.count == 3 else { return nil }
@@ -190,7 +222,7 @@ enum MeetingFiles {
     }
 }
 
-/// A screenshot taken during a meeting, `atMs` milliseconds from the start.
+/// A screenshot taken (or a video started) during a meeting, `atMs` milliseconds from the start.
 struct MeetingScreenshot: Identifiable, Hashable, Sendable {
     let url: URL
     let atMs: Int

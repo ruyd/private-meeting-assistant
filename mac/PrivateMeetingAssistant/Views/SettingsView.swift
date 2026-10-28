@@ -7,6 +7,7 @@ enum SettingsKeys {
     static let language = "language"
     static let removeEcho = "removeEcho"
     static let identifySpeakers = "identifySpeakers"
+    static let saveAudio = "saveAudio"
 }
 
 /// The Settings window: one tab per area, each setting with a plain-language note on what it does.

@@ -9,6 +9,8 @@ struct MeetingView: View {
     @State private var meeting: Meeting?
     @State private var segments: [Segment] = []
     @State private var screenshots: [MeetingScreenshot] = []
+    @State private var videos: [MeetingScreenshot] = []
+    @State private var audio: URL?
     @State private var speakers: [MeetingSpeaker] = []
     @State private var showNaming = false
     @State private var title = ""
@@ -65,8 +67,15 @@ struct MeetingView: View {
                         .textFieldStyle(.plain)
                         .font(.title2.bold())
                         .onSubmit { rename() }
-                    Text("\(meeting.startedAt.formatted(date: .complete, time: .shortened)) · \(TranscriptExport.timestamp(meeting.durationMs))")
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Text("\(meeting.startedAt.formatted(date: .complete, time: .shortened)) · \(TranscriptExport.timestamp(meeting.durationMs))")
+                            .foregroundStyle(.secondary)
+                        if let audio {
+                            Button("Play Audio", systemImage: "waveform") { NSWorkspace.shared.open(audio) }
+                                .controlSize(.small)
+                                .help("Open the meeting's audio recording (audio.m4a)")
+                        }
+                    }
                     if !speakers.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
@@ -113,6 +122,7 @@ struct MeetingView: View {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(segments) { segment in
                             ForEach(screenshots(before: segment)) { ScreenshotRow(shot: $0, leadingInset: 62) }
+                            ForEach(media(videos, before: segment)) { VideoRow(video: $0, leadingInset: 62) }
                             TranscriptRow(
                                 segment: segment, speakerWidth: speakerWidth,
                                 isFocused: segment.id == route.focusSegmentID
@@ -121,6 +131,9 @@ struct MeetingView: View {
                         }
                         ForEach(screenshots.filter { $0.atMs > (segments.last?.startMs ?? -1) }) {
                             ScreenshotRow(shot: $0, leadingInset: 62)
+                        }
+                        ForEach(videos.filter { $0.atMs > (segments.last?.startMs ?? -1) }) {
+                            VideoRow(video: $0, leadingInset: 62)
                         }
                     }
                 }
@@ -140,10 +153,13 @@ struct MeetingView: View {
     private var speakerWidth: CGFloat { segments.contains { $0.participant != nil } ? 110 : 44 }
 
     /// Screenshots taken after the previous line started and up to this one.
-    private func screenshots(before segment: Segment) -> [MeetingScreenshot] {
+    private func screenshots(before segment: Segment) -> [MeetingScreenshot] { media(screenshots, before: segment) }
+
+    /// Screenshots or videos from after the previous line started and up to this one.
+    private func media(_ items: [MeetingScreenshot], before segment: Segment) -> [MeetingScreenshot] {
         guard let index = segments.firstIndex(of: segment) else { return [] }
         let after = index == 0 ? -1 : segments[index - 1].startMs
-        return screenshots.filter { $0.atMs > after && $0.atMs <= segment.startMs }
+        return items.filter { $0.atMs > after && $0.atMs <= segment.startMs }
     }
 
     private func load() {
@@ -152,6 +168,9 @@ struct MeetingView: View {
             meeting = try store.meeting(route.meetingID)
             segments = try store.segments(of: route.meetingID)
             screenshots = meeting.map { MeetingFiles.screenshots(in: $0.folder) } ?? []
+            videos = meeting.map { MeetingFiles.videos(in: $0.folder) } ?? []
+            audio = meeting.map { $0.folder.appending(path: MeetingFiles.audioFile) }
+                .flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
             speakers = try store.speakers(of: route.meetingID)
             title = meeting?.title ?? ""
         } catch {

@@ -22,6 +22,16 @@ final class Recorder {
     private(set) var isTakingScreenshot = false
     /// Whether this recording tells voices apart (Participant 1, 2…) instead of one "Them".
     private(set) var identifiesSpeakers = false
+    /// Whether the meeting's audio is being saved to audio.m4a.
+    private(set) var isSavingAudio = false
+    /// The window recording in progress, and videos recorded so far (by when each started).
+    private(set) var isRecordingVideo = false
+    private(set) var isStartingVideo = false
+    private(set) var videos: [MeetingScreenshot] = []
+    @ObservationIgnored private var windowRecorder: WindowRecorder?
+    /// The audio file, once saving audio was first turned on; the capture threads write to it.
+    @ObservationIgnored private let audioFile = AudioFileBox()
+    @ObservationIgnored private var startHostTime: UInt64 = 0
 
     @ObservationIgnored private var transcriber: Transcriber?
     /// A load under way, shared by `preload` and `start` so the model is never loaded twice.
@@ -51,7 +61,7 @@ final class Recorder {
     /// everyone in the room when recording the microphone only.
     func start(
         title: String, model: SpeechModel, language: String?, removeEcho: Bool = true,
-        details: MeetingDetails? = nil, identifySpeakers: Bool = false
+        details: MeetingDetails? = nil, identifySpeakers: Bool = false, saveAudio: Bool = false
     ) async {
         guard phase == .idle else { return }
         error = nil
@@ -90,15 +100,18 @@ final class Recorder {
         library.writeFiles(meetingID)
         lines = []
         screenshots = []
+        videos = []
         segmentIDs = [:]
         backlog = 0
         self.removeEcho = removeEcho && capture.captureSystemAudio
         let voiceprinter = identifySpeakers ? Voiceprinter.load() : nil
         identifiesSpeakers = voiceprinter != nil
+        startHostTime = mach_absolute_time()
+        audioFile.set(nil)
         let pipeline = TranscriptionPipeline(
             transcriber: transcriber,
             language: language,
-            startHostTime: mach_absolute_time(),
+            startHostTime: startHostTime,
             removeEcho: removeEcho && capture.captureSystemAudio,
             voiceprinter: voiceprinter,
             identifySpeakers: capture.captureSystemAudio ? [.system] : [.mic],
@@ -111,7 +124,11 @@ final class Recorder {
             },
             onBacklog: { count in Task { @MainActor [weak self] in self?.backlog = count } }
         )
-        await capture.start(consumer: { pipeline.append($0) })
+        let audioFile = audioFile
+        await capture.start(consumer: { chunk in
+            pipeline.append(chunk)
+            audioFile.append(chunk)
+        })
         guard capture.state == .running else {
             await pipeline.finish()
             try? store.deleteMeeting(meetingID)
@@ -123,6 +140,62 @@ final class Recorder {
         library.refresh()
         startedAt = started
         phase = .recording
+        if saveAudio { setSavingAudio(true) }
+    }
+
+    // MARK: Audio and video
+
+    /// Turns saving the meeting's audio (audio.m4a) on or off. The file covers the whole meeting, so
+    /// stretches with saving off are silent and times match the transcript.
+    func setSavingAudio(_ on: Bool) {
+        guard phase == .recording, let meetingID, let folder = try? library.store?.meeting(meetingID)?.folder else { return }
+        if on, audioFile.recorder == nil {
+            do {
+                audioFile.set(try AudioFileRecorder(
+                    url: folder.appending(path: MeetingFiles.audioFile), startHostTime: startHostTime, isOn: true
+                ))
+                scheduleFileWrite(meetingID)
+            } catch {
+                self.error = "Couldn't save the audio: \(error.localizedDescription)"
+                return
+            }
+        }
+        audioFile.recorder?.setOn(on)
+        isSavingAudio = on
+    }
+
+    /// Whether a video can be recorded: only of an app's window (not all system audio or the
+    /// microphone only), like screenshots.
+    var canRecordVideo: Bool { screenshotApp != nil }
+
+    /// Starts recording the app's window as video, or stops the recording in progress.
+    func toggleVideo() async {
+        if let windowRecorder {
+            await windowRecorder.stop()
+            return
+        }
+        guard phase == .recording, !isStartingVideo, let app = screenshotApp, let meetingID, let startedAt,
+              let folder = try? library.store?.meeting(meetingID)?.folder
+        else { return }
+        isStartingVideo = true
+        defer { isStartingVideo = false }
+        let atMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+        do {
+            let url = try MeetingFiles.newVideo(at: atMs, in: folder)
+            let recorder = try await WindowRecorder.start(bundleID: app.bundleID, appName: app.name, micUID: capture.micDeviceUID, to: url)
+            recorder.onStop = { [weak self] failure in
+                guard let self else { return }
+                self.windowRecorder = nil
+                self.isRecordingVideo = false
+                if let failure { self.error = "The video stopped: \(failure)" }
+                self.scheduleFileWrite(meetingID)
+            }
+            windowRecorder = recorder
+            isRecordingVideo = true
+            videos.append(MeetingScreenshot(url: url, atMs: atMs))
+        } catch {
+            self.error = "Couldn't record video: \(error.localizedDescription)"
+        }
     }
 
     /// Loads the model ahead of time, so starting a recording doesn't wait for it.
@@ -155,6 +228,10 @@ final class Recorder {
         guard phase == .recording, let pipeline else { return }
         phase = .finishing
         capture.stop()
+        await windowRecorder?.stop()
+        await audioFile.recorder?.finish()
+        audioFile.set(nil)
+        isSavingAudio = false
         await pipeline.finish()
         // The last lines are still hopping to the main actor; let them land before the transcript is
         // read (and, later, saved).
@@ -278,4 +355,12 @@ private final class DeliveryCount: Sendable {
     private let count = Mutex(0)
     var value: Int { count.withLock { $0 } }
     func add(_ delta: Int) { count.withLock { $0 += delta } }
+}
+
+/// The audio file being written, swapped in from the main actor and fed from capture threads.
+private final class AudioFileBox: Sendable {
+    private let value = Mutex<AudioFileRecorder?>(nil)
+    var recorder: AudioFileRecorder? { value.withLock { $0 } }
+    func set(_ recorder: AudioFileRecorder?) { value.withLock { $0 = recorder } }
+    func append(_ chunk: AudioChunk) { recorder?.append(chunk) }
 }

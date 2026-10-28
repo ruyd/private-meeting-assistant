@@ -19,6 +19,7 @@ A use case for AI-assisted software development: a small, focused app, built lar
 - **No echo without headphones.** When your speakers play the other side, your mic hears them too. Echo cancellation (SpeexDSP) plus an echo gate keeps their words out of "Me".
 - **Summaries, decisions and action items** from a local model in [Ollama](https://ollama.com): your own Ollama if it's running, or a private copy the app downloads on request. Cloud models are never used.
 - **Meetings are files.** Each meeting is a folder (`Subject - 2026-10-28 14.30/`) with `transcript.md`, `summary.md` and any screenshots you took, in a folder you choose (`~/Meetings` by default). A local index powers the list and full-text search.
+- **Audio and video in the meeting folder.** Save the meeting's audio (your microphone and the call, on the meeting's timeline) as `audio.m4a`, and record the meeting app's window with its sound as video in `video/`, placed in the transcript where it started. Both switch on and off while recording (⇧⌘A, ⇧⌘V).
 - **Screenshots of the meeting app** during a recording (⇧⌘S), saved into the meeting folder and placed in the transcript where they were taken. They only ever capture the app you're recording, never the rest of your screen.
 - **Meeting details from your calendar (optional).** Sign in with your Google, Microsoft 365 or Zoom account in Settings › Accounts, then pick an upcoming meeting or paste a Meet, Zoom or Teams link or ID. The recording takes the meeting's subject, and its participants (organizer, you as "Me", required and optional guests, who declined) are saved with the transcript, shown on the meeting page, made searchable and given to the summary model. Access is read-only and tokens stay in your Keychain.
 - **Nothing leaves your Mac.** The only network access is downloading models (speech models from Hugging Face; Ollama and summary models if you ask for them), talking to Ollama on `localhost`, and, if you sign in to them, reading meeting details from Google, Microsoft or Zoom. Audio, transcripts and summaries are never sent to them.
@@ -31,7 +32,7 @@ The current UI started as a design: the meeting list beside the recording panel,
 
 ![Design: recording, with the live transcript, a screenshot in line and recording actions](docs/images/design-recording.png)
 
-The app follows the first design closely. From the recording design, the live transcript, screenshots and Stop are built; record video, record audio, the live/delayed transcript switch, bookmarks and pause aren't yet.
+The app follows the first design closely. From the recording design, the live transcript and the bottom bar's screenshot, record video, record audio and Stop are built; the live/delayed transcript switch, bookmarks and pause aren't yet.
 
 ## Requirements
 

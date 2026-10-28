@@ -27,6 +27,7 @@ private struct NewRecordingView: View {
     @AppStorage(SettingsKeys.language) private var language = "auto"
     @AppStorage(SettingsKeys.removeEcho) private var removeEcho = true
     @AppStorage(SettingsKeys.identifySpeakers) private var identifySpeakers = true
+    @AppStorage(SettingsKeys.saveAudio) private var saveAudio = true
     @AppStorage(MeetingLibrary.autoSummarizeKey) private var autoSummarize = true
     @State private var title = ""
     /// The calendar or Zoom meeting picked for this recording, with its participants.
@@ -251,6 +252,8 @@ private struct NewRecordingView: View {
                     .help(session.captureSystemAudio
                         ? "Label each voice heard through the computer as its own participant instead of one “Them”"
                         : "Label each voice in the room as its own participant (Participant 1, 2…)")
+                Toggle("Save audio", isOn: $saveAudio)
+                    .help("Keep the meeting's audio (your microphone and the call) as audio.m4a in its folder; you can switch it while recording")
                 Toggle("Summarize when done", isOn: $autoSummarize)
                     .help("Write a summary with a local model when the recording stops")
             }
@@ -299,7 +302,7 @@ private struct NewRecordingView: View {
             await recorder.start(
                 title: name.isEmpty ? RecordView.defaultTitle() : name, model: model,
                 language: language == "auto" ? nil : language, removeEcho: removeEcho, details: details,
-                identifySpeakers: identifySpeakers
+                identifySpeakers: identifySpeakers, saveAudio: saveAudio
             )
         }
     }
@@ -714,25 +717,27 @@ private struct LiveRecordingView: View {
     private enum Item: Identifiable {
         case line(TranscriptLine)
         case screenshot(MeetingScreenshot)
+        case video(MeetingScreenshot)
 
         var id: String {
             switch self {
             case .line(let line): line.id.uuidString
-            case .screenshot(let shot): shot.url.path
+            case .screenshot(let shot), .video(let shot): shot.url.path
             }
         }
 
         var ms: Int {
             switch self {
             case .line(let line): line.startMs
-            case .screenshot(let shot): shot.atMs
+            case .screenshot(let shot), .video(let shot): shot.atMs
             }
         }
     }
 
-    /// Transcript lines with screenshots placed where they were taken.
+    /// Transcript lines with screenshots and videos placed where they were taken.
     private var items: [Item] {
-        (recorder.lines.map(Item.line) + recorder.screenshots.map(Item.screenshot)).sorted { $0.ms < $1.ms }
+        (recorder.lines.map(Item.line) + recorder.screenshots.map(Item.screenshot) + recorder.videos.map(Item.video))
+            .sorted { $0.ms < $1.ms }
     }
 
     var body: some View {
@@ -745,9 +750,18 @@ private struct LiveRecordingView: View {
             Divider()
             actions
                 .padding(.horizontal, 28)
-                .padding(.vertical, 14)
+                .padding(.vertical, 16)
         }
         .navigationTitle(title)
+        .toolbar {
+            ToolbarItem {
+                Button("Copy Transcript", systemImage: "doc.on.doc") {
+                    copy(TranscriptExport.plainText(recorder.lines.map { ($0.speaker, $0.startMs, $0.text) }))
+                }
+                .disabled(recorder.lines.isEmpty)
+                .help("Copy the transcript so far as text")
+            }
+        }
         .task {
             if session.captureSystemAudio, let id = session.target.bundleID { appIcon = ScreenCapture.icon(of: id) }
             micName = InputDevices.effective(chosenUID: session.micDeviceUID, among: InputDevices.all())?.name
@@ -822,6 +836,8 @@ private struct LiveRecordingView: View {
                             )
                         case .screenshot(let shot):
                             ScreenshotRow(shot: shot, caption: screenshotCaption)
+                        case .video(let video):
+                            VideoRow(video: video, isRecording: recorder.isRecordingVideo && video == recorder.videos.last)
                         }
                     }
                     status.id("bottom")
@@ -861,46 +877,77 @@ private struct LiveRecordingView: View {
         .padding(.leading, 46)
     }
 
+    /// The bar at the bottom, as in the recording design: screenshot, video, audio, then Stop.
     private var actions: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Button {
                 Task { await recorder.takeScreenshot() }
             } label: {
-                Label {
-                    HStack(spacing: 6) {
-                        Text("Screenshot")
-                        if !recorder.screenshots.isEmpty {
-                            Text("\(recorder.screenshots.count)").monospacedDigit().foregroundStyle(.secondary)
-                        }
-                    }
-                } icon: {
+                HStack(spacing: 8) {
                     Image(systemName: "camera")
+                    Text("Screenshot")
+                    if !recorder.screenshots.isEmpty {
+                        Text("\(recorder.screenshots.count)").monospacedDigit().foregroundStyle(.secondary)
+                    }
                 }
             }
+            .buttonStyle(BarButtonStyle())
             .keyboardShortcut("s", modifiers: [.command, .shift])
             .disabled(recorder.phase != .recording || recorder.isTakingScreenshot || recorder.screenshotApp == nil)
             .help(recorder.screenshotApp.map { "Save a screenshot of \($0.name)'s window in the meeting's folder (⇧⌘S)" }
                 ?? "Screenshots only capture the app you're recording; pick one under Sources next time")
 
-            Button("Copy Transcript", systemImage: "doc.on.doc") {
-                copy(TranscriptExport.plainText(recorder.lines.map { ($0.speaker, $0.startMs, $0.text) }))
+            Button {
+                Task { await recorder.toggleVideo() }
+            } label: {
+                HStack(spacing: 8) {
+                    if recorder.isStartingVideo {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: recorder.isRecordingVideo ? "record.circle" : "video")
+                            .symbolEffect(.pulse, isActive: recorder.isRecordingVideo)
+                    }
+                    Text(recorder.isRecordingVideo ? "Recording video" : "Record video")
+                }
             }
-            .disabled(recorder.lines.isEmpty)
-            .help("Copy the transcript so far as text")
+            .buttonStyle(BarButtonStyle(activeTint: recorder.isRecordingVideo ? .red : nil))
+            .keyboardShortcut("v", modifiers: [.command, .shift])
+            .disabled(recorder.phase != .recording || !recorder.canRecordVideo || recorder.isStartingVideo)
+            .help(recorder.isRecordingVideo
+                ? "Stop the video (⇧⌘V); the recording goes on"
+                : recorder.screenshotApp.map { "Record \($0.name)'s window with its sound and your microphone, into the meeting's folder (⇧⌘V)" }
+                    ?? "Video records the app you're recording; pick one under Sources next time")
 
-            Spacer()
+            Button {
+                recorder.setSavingAudio(!recorder.isSavingAudio)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "waveform")
+                    Text(recorder.isSavingAudio ? "Recording audio" : "Record audio")
+                }
+            }
+            .buttonStyle(BarButtonStyle(activeTint: recorder.isSavingAudio ? .green : nil))
+            .keyboardShortcut("a", modifiers: [.command, .shift])
+            .disabled(recorder.phase != .recording)
+            .help(recorder.isSavingAudio
+                ? "Stop saving audio (⇧⌘A); the transcript goes on"
+                : "Save the meeting's audio (your microphone and the call) as audio.m4a in the meeting's folder (⇧⌘A)")
+
+            Spacer(minLength: 12)
 
             Button {
                 Task { await stop() }
             } label: {
-                Label("Stop", systemImage: "stop.fill")
+                HStack(spacing: 8) {
+                    Image(systemName: "stop.fill")
+                    Text("Stop")
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
+            .buttonStyle(BarButtonStyle(filled: .red))
+            .keyboardShortcut(".", modifiers: .command)
             .disabled(recorder.phase != .recording)
-            .help("Stop recording; the meeting opens when its transcript is finished")
+            .help("Stop recording; the meeting opens when its transcript is finished (⌘.)")
         }
-        .controlSize(.large)
     }
 
     /// Stops, then opens the finished meeting, unless another one was opened meanwhile.
@@ -908,6 +955,46 @@ private struct LiveRecordingView: View {
         await recorder.stop()
         if navigation.selection == .recorder, let id = recorder.meetingID {
             navigation.open(MeetingRoute(meetingID: id))
+        }
+    }
+}
+
+/// A button in the recording bar: a rounded tile on the app's surface. `activeTint` outlines and
+/// colours it while what it controls is on (green while saving audio); `filled` is for Stop.
+private struct BarButtonStyle: ButtonStyle {
+    var activeTint: Color?
+    var filled: Color?
+
+    func makeBody(configuration: Configuration) -> some View {
+        Tile(configuration: configuration, activeTint: activeTint, filled: filled)
+    }
+
+    private struct Tile: View {
+        let configuration: Configuration
+        let activeTint: Color?
+        let filled: Color?
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(filled != nil ? AnyShapeStyle(.white) : activeTint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.primary))
+                .padding(.horizontal, 18)
+                .frame(height: 44)
+                .background(background, in: .rect(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(activeTint.map { AnyShapeStyle($0.opacity(0.8)) } ?? AnyShapeStyle(Theme.stroke), lineWidth: activeTint == nil ? 1 : 1.5)
+                        .opacity(filled == nil ? 1 : 0)
+                )
+                .contentShape(.rect(cornerRadius: 12))
+                .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.45)
+        }
+
+        private var background: AnyShapeStyle {
+            if let filled { return AnyShapeStyle(filled) }
+            if let activeTint { return AnyShapeStyle(activeTint.opacity(0.12)) }
+            return AnyShapeStyle(Theme.surface)
         }
     }
 }
@@ -1018,6 +1105,39 @@ struct ScreenshotRow: View {
             let url = shot.url
             image = await Task.detached { ScreenCapture.thumbnail(of: url, maxPixels: 400) }.value
         }
+    }
+}
+
+/// A video in a transcript, where it started; click to open it once it's finished.
+struct VideoRow: View {
+    let video: MeetingScreenshot
+    var isRecording = false
+    var leadingInset: CGFloat = 46
+
+    var body: some View {
+        Button {
+            NSWorkspace.shared.open(video.url)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isRecording ? "record.circle" : "play.rectangle")
+                    .font(.title3)
+                    .foregroundStyle(isRecording ? .red : .secondary)
+                    .symbolEffect(.pulse, isActive: isRecording)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isRecording ? "Recording video…" : "Video").font(.callout.weight(.semibold))
+                    Text(TranscriptExport.timestamp(video.atMs)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Theme.surface, in: .rect(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.stroke))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(isRecording)
+        .padding(.leading, leadingInset)
+        .help(isRecording ? "Recording; it opens once you stop the video" : "Open the video")
     }
 }
 

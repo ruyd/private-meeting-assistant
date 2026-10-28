@@ -25,7 +25,7 @@ enum ScreenCapture {
     }
 
     /// The app's largest normal window on screen.
-    private static func mainWindow(of bundleID: String, in content: SCShareableContent) -> SCWindow? {
+    static func mainWindow(of bundleID: String, in content: SCShareableContent) -> SCWindow? {
         content.windows
             .filter {
                 $0.owningApplication?.bundleIdentifier == bundleID && $0.windowLayer == 0
