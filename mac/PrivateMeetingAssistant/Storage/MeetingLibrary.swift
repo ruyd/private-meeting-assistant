@@ -17,6 +17,8 @@ final class MeetingLibrary {
     /// Summaries being written right now. While any are, the speech model is unloaded to leave the
     /// summary model the memory (see ContentView).
     private(set) var summariesRunning = 0
+    /// The engine writing each meeting's summary right now, for its "Writing with…" line.
+    private(set) var summarizingWith: [Int64: String] = [:]
     /// A meeting whose voices should be named now (the meeting page offers it), and whether to
     /// write its summary once they are.
     private(set) var namingRequest: (meetingID: Int64, thenSummarize: Bool)?
@@ -144,17 +146,23 @@ final class MeetingLibrary {
     func summarize(_ id: Int64) async {
         guard let store else { return }
         summariesRunning += 1
-        defer { summariesRunning -= 1 }
+        defer {
+            summariesRunning -= 1
+            summarizingWith[id] = nil
+        }
         try? store.setSummaryStatus(id, "running")
         refresh()
         do {
             let model = Self.summaryModel
             let choice = SummaryEngine.Choice(rawValue: UserDefaults.standard.string(forKey: Self.summaryEngineKey) ?? "") ?? .automatic
             let backend = try await SummaryEngine.shared.backend(choice: choice, model: model)
-            let summary = try await Summarizer(backend: backend).summarize(
+            summarizingWith[id] = backend.name
+            log.notice("summarizing with \(backend.name, privacy: .public) (engine setting: \(choice.rawValue, privacy: .public))")
+            var summary = try await Summarizer(backend: backend).summarize(
                 store.segments(of: id), participants: store.meeting(id)?.details?.participants ?? [],
                 notes: store.meeting(id)?.notes ?? ""
             )
+            summary.writtenBy = backend.name
             try store.saveSummary(id, summary)
             writeFiles(id)
         } catch {

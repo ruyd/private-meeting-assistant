@@ -10,6 +10,14 @@ struct Summarizer {
         case ollama(URL, model: String)
         /// Apple's on-device model (`SystemLanguageModel`).
         case apple
+
+        /// What writes the summary, as shown while it's written and under it.
+        var name: String {
+            switch self {
+            case .apple: "Apple Intelligence"
+            case .ollama(let url, let model): url == SummaryEngine.yoursURL ? "\(model) in your Ollama" : "\(model) in the downloaded Ollama"
+            }
+        }
     }
 
     let backend: Backend

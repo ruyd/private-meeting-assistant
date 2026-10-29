@@ -125,3 +125,42 @@ struct AppleSummaryTests {
         #expect(summary.actionItems.isEmpty)
     }
 }
+
+/// Regenerate uses the engine set in Settings at that moment, and the summary says which wrote it.
+/// Runs Apple's model and your Ollama (each only if it's there); the engine setting is put back.
+@Suite(.serialized)
+struct SummaryEngineSwitchTests {
+    @MainActor @Test(.timeLimit(.minutes(5)))
+    func regenerateFollowsTheEngineSetting() async throws {
+        let store = try MeetingStore.inMemory()
+        let root = FileManager.default.temporaryDirectory.appending(path: "engine-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let started = Date()
+        let folder = try MeetingFiles.createFolder(in: root, title: "Meeting", startedAt: started)
+        let id = try store.createMeeting(title: "Meeting", startedAt: started, folder: folder)
+        for (i, text) in ["The App Store build is ready for review, thanks everyone for joining today.",
+                          "Great. Let's submit it on Monday, and I'll write the release notes tonight.",
+                          "Agreed. I'll prepare the screenshots by Friday and send them over."].enumerated() {
+            _ = try store.insertSegment(meetingID: id, source: i == 1 ? .mic : .system, startMs: i * 5_000, endMs: i * 5_000 + 4_000, text: text)
+        }
+        let library = MeetingLibrary(store: store)
+        let defaults = UserDefaults.standard
+        let saved = defaults.string(forKey: MeetingLibrary.summaryEngineKey)
+        defer { defaults.set(saved, forKey: MeetingLibrary.summaryEngineKey) }
+
+        await SummaryEngine.shared.refresh()
+        var engines: [(SummaryEngine.Choice, String)] = []
+        if SummaryEngine.appleProblem == nil { engines.append((.apple, "Apple Intelligence")) }
+        if SummaryEngine.shared.yours.problem == nil, SummaryEngine.shared.yours.models.contains(MeetingLibrary.summaryModel) {
+            engines.append((.yours, "in your Ollama"))
+        }
+        for (choice, expected) in engines {
+            defaults.set(choice.rawValue, forKey: MeetingLibrary.summaryEngineKey)
+            await library.summarize(id)
+            let meeting = try store.meeting(id)
+            let summary = try #require(meeting?.summary, "\(meeting?.summaryStatus ?? "")")
+            print("engine switch: \(choice.rawValue) → \(summary.writtenBy ?? "nil")")
+            #expect(summary.writtenBy?.contains(expected) == true, "\(choice.rawValue): \(summary.writtenBy ?? "nil")")
+        }
+    }
+}

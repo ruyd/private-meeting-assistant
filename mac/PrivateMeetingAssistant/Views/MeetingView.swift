@@ -209,7 +209,7 @@ private struct SummarySection: View {
                 Spacer()
                 if meeting.summaryStatus == "running" {
                     ProgressView().controlSize(.small)
-                    Text("Writing with \(MeetingLibrary.summaryModel)…").foregroundStyle(.secondary)
+                    Text(library.summarizingWith[meeting.id].map { "Writing with \($0)…" } ?? "Writing…").foregroundStyle(.secondary)
                 } else if hasTranscript {
                     if let summary = meeting.summary {
                         Button(copied ? "Copied" : "Copy Summary", systemImage: copied ? "checkmark" : "doc.on.doc") {
@@ -251,6 +251,9 @@ private struct SummarySection: View {
                         }
                         .toggleStyle(.checkbox)
                     }
+                }
+                if let writtenBy = summary.writtenBy {
+                    Text("Written by \(writtenBy)").font(.caption).foregroundStyle(.tertiary)
                 }
             } else if meeting.summaryStatus == "none" && hasTranscript {
                 Text("Summarize to get the main points, decisions and action items, written by a model on this Mac.")

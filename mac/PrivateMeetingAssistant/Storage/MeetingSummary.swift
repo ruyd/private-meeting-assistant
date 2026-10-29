@@ -25,6 +25,8 @@ struct MeetingSummary: Codable, Hashable, Sendable {
     var summary: String
     var decisions: [String]
     var actionItems: [ActionItem]
+    /// The engine that wrote it ("Apple Intelligence", "gemma3 in your Ollama"); nil for older ones.
+    var writtenBy: String?
 
     init(summary: String, decisions: [String] = [], actionItems: [ActionItem] = []) {
         self.summary = summary
@@ -37,5 +39,6 @@ struct MeetingSummary: Codable, Hashable, Sendable {
         summary = try c.decode(String.self, forKey: .summary)
         decisions = try c.decodeIfPresent([String].self, forKey: .decisions) ?? []
         actionItems = try c.decodeIfPresent([ActionItem].self, forKey: .actionItems) ?? []
+        writtenBy = try c.decodeIfPresent(String.self, forKey: .writtenBy)
     }
 }
