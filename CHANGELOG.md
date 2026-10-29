@@ -15,7 +15,7 @@ a successful release they add the build to **Published builds** and tag the comm
 - Rename a meeting while recording (its folder follows when the recording stops), and a clearer rename button on the meeting page.
 - Notes: type them while recording or afterwards; they're saved in notes.md, searchable, and used for the summary.
 - Live transcript: words appear as they're spoken (about half a second, with Apple's on-device recognizer), then Whisper's more accurate line replaces them a few seconds later. The Live / Delayed switch in the recording view turns it off.
-- Fewer invented lines: Whisper's stock phrases over room noise and keyboard clicks ("Thank you.", "I'm going to go ahead…") and its repeat loops no longer reach the transcript.
+- Fewer invented lines: Whisper's stock phrases over room noise, keyboard clicks and a fan near the mic ("Thank you.", "I'm going to go ahead…") and its repeat loops no longer reach the transcript. With live text on, a line is also dropped when Apple's recognizer, listening to the same audio, heard no words there.
 - Summaries no longer make up a meeting: a recording with almost nothing said gets "Too little was said to summarize.", and the model is told to say when little of substance was discussed instead of inventing topics or tasks.
 - Saved audio no longer crackles: small gaps and overlaps between captured chunks (2–9 ms dropouts) are gone.
 

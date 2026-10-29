@@ -6,7 +6,9 @@ Known gaps and ideas for the Swift app, roughly in priority order. Remove items 
 
 - **Select across lines while recording.** The meeting page's transcript is one text view (select and copy across lines), but the live view keeps the design's conversation layout, one view per line; Copy Transcript covers it meanwhile. A text view with the avatars drawn in the margin would bring both together.
 - **Play from any word.** Clicking a line's time plays from there; clicking inside a line could too, but would clash with selecting text. Whisper's word timings would allow highlighting the word being played, not just the line.
-- **Retune invented-line filtering on more recordings.** Lines Whisper is 0.3 or more sure hold no speech are dropped (measured: invented lines over noise 0.32–0.58, speech, even quiet, under 0.1), along with repeat loops. Its word confidence didn't separate them (0.6–0.9 either way). Replay more real recordings with `InventedLinesReplay` to check the cut-off.
+- **Low-cut filter on the mic.** A fan above the mic put most of its noise below 100 Hz: a 100 Hz high-pass took it down 10 dB (-31 to -41 dBFS) while leaving voices alone, so fewer noise stretches would start utterances at all, and the saved audio would rumble less.
+- **Invented lines with live text off.** Lines Apple's recognizer heard no words in are dropped, but only while it runs (Live). Keeping it running, unseen, in Delayed mode would keep the check.
+- **Retune invented-line filtering on more recordings.** Lines Whisper is 0.3 or more sure hold no speech are dropped (measured: invented lines over noise 0.32–0.58, speech, even quiet, under 0.1), along with repeat loops. Its word confidence didn't separate them (0.6–0.9 either way), and live, over a fan, Whisper rated its "Thank you."s 0.00: the live recognizer's check caught those. Replay more real recordings with `InventedLinesReplay` to check the cut-off.
 - **Vocabulary hints.** Pass names and jargon (from the meeting title or calendar) to Whisper as a prompt so they're spelled right.
 
 ## Echo

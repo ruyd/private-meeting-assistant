@@ -63,7 +63,8 @@ struct ContentView: View {
         .task(id: "\(modelID) \(ModelStore.shared.downloaded.contains(modelID)) \(MeetingLibrary.shared.summariesRunning > 0) \(recorder.phase == .idle)") {
             if MeetingLibrary.shared.summariesRunning > 0 {
                 recorder.unloadModel()
-            } else {
+            } else if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+                // Not when hosting tests: they end with exit() mid-load, which aborts in ggml.
                 await recorder.preload(SpeechModel.find(modelID) ?? .recommended)
             }
         }

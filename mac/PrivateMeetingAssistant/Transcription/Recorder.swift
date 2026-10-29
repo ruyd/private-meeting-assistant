@@ -44,6 +44,8 @@ final class Recorder {
     /// How far Whisper's lines reach on each source, in meeting milliseconds: live text up to here is
     /// replaced by them.
     @ObservationIgnored private var whisperReachMs: [AudioSource: Int] = [:]
+    /// Where the live recognizer found words, per source, to catch lines Whisper made up.
+    @ObservationIgnored private var heard: [AudioSource: LiveTranscriber.Heard] = [:]
     @ObservationIgnored private var liveLocale = Locale.current
     @ObservationIgnored private var startHostTime: UInt64 = 0
 
@@ -121,6 +123,7 @@ final class Recorder {
         let voiceprinter = identifySpeakers ? Voiceprinter.load() : nil
         identifiesSpeakers = voiceprinter != nil
         startHostTime = mach_absolute_time()
+        heard = [:]
         audioFile.set(nil)
         let pipeline = TranscriptionPipeline(
             transcriber: transcriber,
@@ -170,6 +173,7 @@ final class Recorder {
         showsLiveText = on
         guard phase == .recording || phase == .loadingModel else { return }
         if !on {
+            stopHearing()
             await live.stopAll()
             liveFragments = [:]
             liveText = [:]
@@ -178,20 +182,41 @@ final class Recorder {
         let sources: [AudioSource] = capture.captureSystemAudio ? [.mic, .system] : [.mic]
         for source in sources where !live.has(source) {
             liveLog.notice("starting live text for \(source.rawValue, privacy: .public)")
+            live.expect(source)
             let transcriber = await LiveTranscriber.start(locale: liveLocale) { [weak self] fragment in
                 Task { @MainActor in self?.receive(fragment, from: source) }
             }
             // Turned off, or the recording stopped, while the recognizer was starting.
             guard showsLiveText, phase == .recording, let transcriber else {
+                live.cancel(source)
                 await transcriber?.stop()
                 continue
             }
-            live.set(transcriber, for: source)
+            let from = live.set(transcriber, for: source).map { $0 * 1000 / Int(MonoResampler.sampleRate) }
+            heard[source] = LiveTranscriber.Heard(from: from ?? elapsedMs)
         }
+    }
+
+    /// Milliseconds since the recording started.
+    private var elapsedMs: Int {
+        Int(Double(mach_absolute_time() - startHostTime) * Self.hostTicksPerMs)
+    }
+
+    private static let hostTicksPerMs: Double = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return Double(info.numer) / Double(info.denom) / 1_000_000
+    }()
+
+    /// Marks where the live recognizers stop listening.
+    private func stopHearing() {
+        let now = elapsedMs
+        for source in heard.keys where heard[source]?.until == nil { heard[source]?.until = now }
     }
 
     private func receive(_ fragment: LiveTranscriber.Fragment, from source: AudioSource) {
         if liveFragments[source] == nil { liveLog.notice("first live text from \(source.rawValue, privacy: .public)") }
+        heard[source]?.add(fragment)
         guard showsLiveText else { return }
         var f = liveFragments[source] ?? ([], nil)
         if fragment.isFinal {
@@ -303,6 +328,7 @@ final class Recorder {
         phase = .finishing
         capture.stop()
         await windowRecorder?.stop()
+        stopHearing()
         await live.stopAll()
         liveFragments = [:]
         liveText = [:]
@@ -386,7 +412,26 @@ final class Recorder {
         }
     }
 
-    private func insert(_ line: TranscriptLine) {
+    /// Takes a line from Whisper, unless the live recognizer heard no words where it was said. Its
+    /// words can lag a little behind, so a line it hasn't heard yet gets one more look shortly after.
+    private func insert(_ line: TranscriptLine, waited: Bool = false) {
+        if let heard = heard[line.source], heard.heardNothing(during: line) {
+            if !waited, heard.until == nil {
+                undelivered.add(1)
+                Task { [undelivered] in
+                    try? await Task.sleep(for: .seconds(2))
+                    self.insert(line, waited: true)
+                    undelivered.add(-1)
+                }
+            } else {
+                liveLog.notice("dropped a line the live recognizer heard no words in: \(line.text, privacy: .private)")
+            }
+            return
+        }
+        add(line)
+    }
+
+    private func add(_ line: TranscriptLine) {
         // Whisper's line replaces the live text for its stretch, even if it turns out to be echo.
         whisperReachMs[line.source] = max(whisperReachMs[line.source] ?? 0, line.endMs)
         updateLiveText(line.source)
@@ -455,16 +500,57 @@ private final class AudioFileBox: Sendable {
 
 /// The live recognizers, per source: started from the main actor, fed from capture threads.
 private final class LiveTranscriberBox: Sendable {
-    private let value = Mutex<[AudioSource: LiveTranscriber]>([:])
-    func has(_ source: AudioSource) -> Bool { value.withLock { $0[source] != nil } }
-    func set(_ transcriber: LiveTranscriber, for source: AudioSource) { value.withLock { $0[source] = transcriber } }
-    func append(_ samples: [Float], from source: AudioSource, at position: Int) {
-        value.withLock { $0[source] }?.append(samples, at: position)
+    private enum Entry {
+        /// The recognizer is starting: audio waits here (up to `maxHeld` samples), so it hears the
+        /// meeting from the start rather than from whenever it's ready.
+        case starting(held: [(samples: [Float], position: Int)])
+        case running(LiveTranscriber)
     }
+    private static let maxHeld = Int(MonoResampler.sampleRate) * 15
+    private let value = Mutex<[AudioSource: Entry]>([:])
+
+    func has(_ source: AudioSource) -> Bool { value.withLock { $0[source] != nil } }
+    /// Starts holding the source's audio for a recognizer about to start.
+    func expect(_ source: AudioSource) { value.withLock { $0[source] = .starting(held: []) } }
+    func cancel(_ source: AudioSource) { value.withLock { $0[source] = nil } }
+
+    /// Hands the recognizer the audio held for it, and the rest as it comes. Returns the sample
+    /// position it hears from (nil: none held, so from now on).
+    func set(_ transcriber: LiveTranscriber, for source: AudioSource) -> Int? {
+        value.withLock { all in
+            var first: Int?
+            if case .starting(let held)? = all[source] {
+                first = held.first?.position
+                for chunk in held { transcriber.append(chunk.samples, at: chunk.position) }
+            }
+            all[source] = .running(transcriber)
+            return first
+        }
+    }
+
+    func append(_ samples: [Float], from source: AudioSource, at position: Int) {
+        let running: LiveTranscriber? = value.withLock { all in
+            switch all[source] {
+            case .running(let transcriber)?: return transcriber
+            case .starting(var held)?:
+                held.append((samples, position))
+                var count = held.reduce(0) { $0 + $1.samples.count }
+                while count > Self.maxHeld, !held.isEmpty { count -= held.removeFirst().samples.count }
+                all[source] = .starting(held: held)
+                return nil
+            case nil: return nil
+            }
+        }
+        running?.append(samples, at: position)
+    }
+
     func stopAll() async {
         let all = value.withLock { all in
             defer { all = [:] }
-            return Array(all.values)
+            return all.values.compactMap { entry -> LiveTranscriber? in
+                if case .running(let transcriber) = entry { return transcriber }
+                return nil
+            }
         }
         for transcriber in all { await transcriber.stop() }
     }

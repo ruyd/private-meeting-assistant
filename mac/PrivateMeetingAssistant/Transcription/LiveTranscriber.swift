@@ -21,6 +21,43 @@ final class LiveTranscriber: Sendable {
         func isCovered(byWhisperReaching reachMs: Int) -> Bool { (startMs + endMs) / 2 <= reachMs }
     }
 
+    /// Where the recognizer found words on one source, and when it was listening (meeting
+    /// milliseconds). A line of Whisper's in a stretch where it found none is most likely made up:
+    /// over a fan's noise Whisper writes "Thank you." and "I'm going to go.", the recognizer nothing.
+    struct Heard: Sendable {
+        let from: Int
+        var until: Int?
+        var words: [Range<Int>] = []
+
+        /// Speech this close to where listening began or ended may have been cut short for the
+        /// recognizer (it reports the last words a moment late), so only the rest of a line is judged…
+        static let startEdgeMs = 500
+        static let endEdgeMs = 1_000
+        /// …and only if at least this much of it is left.
+        static let minJudgedMs = 1_000
+        /// How near a line the recognizer's words may lie and still count (their timings differ).
+        static let slackMs = 500
+
+        /// Sounds the recognizer also writes over noise; on their own they don't show anyone spoke.
+        static let fillers: Set<String> = ["um", "umm", "uh", "uhh", "er", "erm", "ah", "ahh", "oh", "hmm", "hm", "mm", "mhm", "mm-hmm"]
+
+        mutating func add(_ fragment: Fragment) {
+            let said = fragment.text.lowercased().split { !$0.isLetter && $0 != "-" }
+            guard said.contains(where: { !Self.fillers.contains(String($0)) }) else { return }
+            words.append(fragment.startMs..<max(fragment.endMs, fragment.startMs + 1))
+        }
+
+        /// True if the recognizer listened to (most of) `line` and found no words in it. A line
+        /// running into the end of the recording, as noise often does, is judged up to there.
+        func heardNothing(during line: TranscriptLine) -> Bool {
+            let start = max(line.startMs, from + Self.startEdgeMs)
+            let end = until.map { min(line.endMs, $0 - Self.endEdgeMs) } ?? line.endMs
+            guard end - start >= Self.minJudgedMs else { return false }
+            let stretch = (start - Self.slackMs)..<(end + Self.slackMs)
+            return !words.contains { $0.overlaps(stretch) }
+        }
+    }
+
     private let input: AsyncStream<AnalyzerInput>.Continuation
     private let analyzer: SpeechAnalyzer
     private let results: Task<Void, Never>
@@ -54,11 +91,13 @@ final class LiveTranscriber: Sendable {
             let (stream, input) = AsyncStream.makeStream(of: AnalyzerInput.self)
             try await analyzer.start(inputSequence: stream)
             log.notice("live transcript started (\(supported.identifier, privacy: .public), \(format.sampleRate, privacy: .public) Hz)")
+            let trace = ProcessInfo.processInfo.environment["PMA_TRACE_SEGMENTS"] != nil
             let results = Task.detached(priority: .userInitiated) {
                 do {
                     for try await result in transcriber.results {
                         let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !text.isEmpty else { continue }
+                        if trace { print(String(format: "live: %.2f-%.2fs %@ %@", result.range.start.seconds, result.range.end.seconds, result.isFinal ? "final" : "volatile", text)) }
                         onFragment(Fragment(
                             startMs: Int(result.range.start.seconds * 1000), endMs: Int(result.range.end.seconds * 1000),
                             text: text, isFinal: result.isFinal

@@ -91,4 +91,26 @@ struct LiveFragmentTests {
         let now = LiveTranscriber.Fragment(startMs: 18_000, endMs: 21_000, text: "and next", isFinal: false)
         #expect(!now.isCovered(byWhisperReaching: 18_200))
     }
+
+    @Test func whisperLinesWithNoWordsHeardAreSuspect() {
+        func line(_ start: Int, _ end: Int) -> TranscriptLine { TranscriptLine(source: .mic, startMs: start, endMs: end, text: "Thank you.") }
+        var heard = LiveTranscriber.Heard(from: 0)
+        heard.add(LiveTranscriber.Fragment(startMs: 4_800, endMs: 7_800, text: "Okay, this is", isFinal: true))
+        // Fan noise from 12 s: Whisper wrote a line, the recognizer nothing.
+        #expect(heard.heardNothing(during: line(12_000, 13_500)))
+        // Real speech, timed a little differently by the two.
+        #expect(!heard.heardNothing(during: line(4_400, 7_700)))
+        #expect(!heard.heardNothing(during: line(8_100, 9_000)))
+        // The recognizer wrote "Um" over the fan: not words.
+        heard.add(LiveTranscriber.Fragment(startMs: 550, endMs: 6_610, text: "Um.", isFinal: true))
+        // Noise from the very start, as with a fan above the mic.
+        #expect(heard.heardNothing(during: line(533, 2_033)))
+        // Too near the start of listening to tell.
+        #expect(!heard.heardNothing(during: line(0, 1_200)))
+        heard.until = 25_500
+        // Noise running into the end of the recording is judged up to a second before it…
+        #expect(heard.heardNothing(during: line(15_400, 25_500)))
+        // …but a last word or two said just before stopping is kept.
+        #expect(!heard.heardNothing(during: line(23_800, 25_400)))
+    }
 }

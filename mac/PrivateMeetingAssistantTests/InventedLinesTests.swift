@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import Synchronization
 import Testing
 @testable import Private_Meeting_Assistant
 
@@ -21,10 +22,25 @@ struct InventedLinesReplay {
         let model = try #require(SpeechModel.catalog.first(where: ModelStore.isComplete))
         let transcriber = try await Transcriber.load(model)
 
+        // What Apple's recognizer (the live text) hears in the same audio, fed at about real time.
+        let heard = Mutex<[LiveTranscriber.Fragment]>([])
+        if let live = await LiveTranscriber.start(locale: Locale(identifier: "en-US"), onFragment: { f in heard.withLock { $0.append(f) } }) {
+            for offset in stride(from: 0, to: samples.count, by: 1_600) {
+                live.append(Array(samples[offset..<min(offset + 1_600, samples.count)]), at: offset)
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            try await Task.sleep(for: .seconds(2))
+            await live.stop()
+        }
+        for f in heard.withLock({ $0 }) {
+            print(String(format: "replay: apple %5.2f-%5.2fs %@ %@", Double(f.startMs) / 1000, Double(f.endMs) / 1000, f.isFinal ? "final" : "volatile", f.text))
+        }
+
         var segmenter = Segmenter()
         var utterances = segmenter.push(samples)
         if let last = segmenter.flush() { utterances.append(last) }
         for u in utterances {
+            print(String(format: "replay: utterance %5.2f-%5.2fs", Double(u.startMs) / 1000, Double(u.endMs) / 1000))
             for line in try await transcriber.transcribe(u.samples, language: "en") {
                 print(String(format: "replay: %5.2f-%5.2fs  noSpeech %.2f confidence %.2f  %@",
                              Double(u.startMs) / 1000, Double(u.endMs) / 1000, line.noSpeech, line.confidence, line.text))
