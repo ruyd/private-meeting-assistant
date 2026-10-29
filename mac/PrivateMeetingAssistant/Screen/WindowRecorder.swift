@@ -33,6 +33,11 @@ final class WindowRecorder {
         }
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         guard let window = ScreenCapture.mainWindow(of: bundleID, in: content) else { throw ScreenCaptureError.noWindow(appName) }
+        return try await start(window: window, to: url)
+    }
+
+    /// Starts recording `window` into `url`.
+    static func start(window: SCWindow, to url: URL) async throws -> WindowRecorder {
 
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let config = SCStreamConfiguration()

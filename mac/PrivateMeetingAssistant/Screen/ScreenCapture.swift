@@ -26,12 +26,41 @@ enum ScreenCapture {
 
     /// The app's largest normal window on screen.
     static func mainWindow(of bundleID: String, in content: SCShareableContent) -> SCWindow? {
-        content.windows
-            .filter {
-                $0.owningApplication?.bundleIdentifier == bundleID && $0.windowLayer == 0
-                    && $0.frame.width >= 200 && $0.frame.height >= 150
-            }
-            .max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+        windows(of: bundleID, in: content).max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+    }
+
+    /// The app's ordinary windows (not menus, panels or tiny helpers).
+    static func windows(of bundleID: String, in content: SCShareableContent) -> [SCWindow] {
+        content.windows.filter {
+            $0.owningApplication?.bundleIdentifier == bundleID && $0.windowLayer == 0
+                && $0.frame.width >= 200 && $0.frame.height >= 150
+        }
+    }
+
+    /// Titles of windows showing a call or a video: a browser window's title is its visible tab's.
+    private static let videoTitles = [
+        " - YouTube", "Meet - ", "Meet – ", "Google Meet", "Microsoft Teams", "Zoom Meeting", "Zoom Webinar",
+        "Webex", "Whereby", "Vimeo", "Twitch", "Jitsi Meet", "Huddle",
+    ]
+
+    /// The one window whose title shows it has a call or a video in it; nil if none does, or several.
+    static func videoWindow(among windows: [SCWindow]) -> SCWindow? {
+        let matches = windows.filter { isVideoTitle($0.title ?? "") }
+        return matches.count == 1 ? matches[0] : nil
+    }
+
+    static func isVideoTitle(_ title: String) -> Bool {
+        videoTitles.contains { title.contains($0) }
+    }
+
+    /// A small picture of a window, for choosing one.
+    @MainActor static func preview(of window: SCWindow, width: CGFloat = 480) async -> CGImage? {
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let config = SCStreamConfiguration()
+        config.width = Int(width)
+        config.height = max(Int(width * window.frame.height / max(window.frame.width, 1)), 1)
+        config.showsCursor = false
+        return try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
 
     private static func capture(_ window: SCWindow) async throws -> CGImage {

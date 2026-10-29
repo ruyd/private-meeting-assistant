@@ -133,7 +133,8 @@ extension CaptureSelfTest {
         // Recording stopped; with auto-summarize on, a summary is being written. Wait for it.
         var summaryStatus = "none"
         var summaryText: String?
-        if let id = recorder.meetingID {
+        // Nothing said: no summary is written, so there's nothing to wait for.
+        if let id = recorder.meetingID, !lines.isEmpty {
             for _ in 0..<600 {
                 summaryStatus = (try? store?.meeting(id))??.summaryStatus ?? "none"
                 if summaryStatus != "running" && summaryStatus != "none" { break }

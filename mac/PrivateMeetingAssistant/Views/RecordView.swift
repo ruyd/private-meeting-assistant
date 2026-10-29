@@ -778,6 +778,14 @@ private struct LiveRecordingView: View {
         .task(id: session.micDeviceUID) {
             micName = InputDevices.effective(chosenUID: session.micDeviceUID, among: InputDevices.all())?.name
         }
+        .sheet(isPresented: Binding(
+            get: { !recorder.videoWindowChoices.isEmpty },
+            set: { if !$0 { Task { await recorder.chooseVideoWindow(nil) } } }
+        )) {
+            VideoWindowPicker(appName: recorder.screenshotApp?.name ?? "the app", choices: recorder.videoWindowChoices) { id in
+                Task { await recorder.chooseVideoWindow(id) }
+            }
+        }
     }
 
     private var header: some View {
@@ -1090,6 +1098,55 @@ private struct VideoButton: View {
         )
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.45)
+    }
+}
+
+/// Asks which of the recorded app's windows to record when it isn't clear (several browser windows,
+/// none of them a known call or video site): each window's picture and title.
+private struct VideoWindowPicker: View {
+    let appName: String
+    let choices: [VideoWindowChoice]
+    let choose: (CGWindowID?) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Which \(appName) window has the video?").font(.title3.weight(.semibold))
+                Text("It's recorded for this meeting's videos while it's open.").foregroundStyle(.secondary)
+            }
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
+                    ForEach(choices) { choice in
+                        Button {
+                            choose(choice.id)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                                    if let preview = choice.preview {
+                                        Image(decorative: preview, scale: 1).resizable().aspectRatio(contentMode: .fit)
+                                    }
+                                }
+                                .frame(height: 140)
+                                .clipShape(.rect(cornerRadius: 8))
+                                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+                                Text(choice.title).font(.callout).lineLimit(2).multilineTextAlignment(.leading)
+                            }
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Record this window")
+                    }
+                }
+            }
+            .frame(maxHeight: 420)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { choose(nil) }.keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 560)
     }
 }
 
