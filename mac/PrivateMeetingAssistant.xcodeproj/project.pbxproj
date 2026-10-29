@@ -23,6 +23,7 @@
 		285295651560B99E07F90B95 /* MeetingDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDB98E1718CE305979E818FF /* MeetingDetails.swift */; };
 		28F59CF0781AB9EED6B09670 /* LiveTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7193DCF1D478087664D519BE /* LiveTranscriber.swift */; };
 		2B8ED7650084D8461F6383E8 /* AudioChunk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD7B8E7779BDD8FD8787BD4 /* AudioChunk.swift */; };
+		2F4D976AEC4D621587F5483A /* ModalChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9071423B869C9AC3F3D7D6B6 /* ModalChrome.swift */; };
 		311E17BAEF1BD6290260A72B /* Summarizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B948B62DE8CEC68EF455431A /* Summarizer.swift */; };
 		350ACD33617A3386F26C67E9 /* WindowRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A64DD5053FBB9482E27BD5 /* WindowRecorder.swift */; };
 		3971E29F15B3B3C7D02EE7B1 /* EchoCanceller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13304DAB75AE7345800AA97B /* EchoCanceller.swift */; };
@@ -169,6 +170,7 @@
 		87030056C667286184E3210A /* NoiseSuppressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoiseSuppressor.swift; sourceTree = "<group>"; };
 		89A64DD5053FBB9482E27BD5 /* WindowRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowRecorder.swift; sourceTree = "<group>"; };
 		8A50CA1CD4D2B94BC0E08213 /* PrivateMeetingAssistantTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PrivateMeetingAssistantTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9071423B869C9AC3F3D7D6B6 /* ModalChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalChrome.swift; sourceTree = "<group>"; };
 		931F9ED8C081AF78A8DF155E /* VideoWindowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoWindowTests.swift; sourceTree = "<group>"; };
 		9AD7B8E7779BDD8FD8787BD4 /* AudioChunk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioChunk.swift; sourceTree = "<group>"; };
 		A37371385834E310668676DB /* CaptureSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureSelfTest.swift; sourceTree = "<group>"; };
@@ -404,6 +406,7 @@
 				4588E28E677EEECE202BE210 /* MeetingDetailsViews.swift */,
 				F7928EA88F84F6197CFC7308 /* MeetingsView.swift */,
 				00BCD117CB8416BA78F32FCE /* MeetingView.swift */,
+				9071423B869C9AC3F3D7D6B6 /* ModalChrome.swift */,
 				839B89B085C08F415BD22DC7 /* RecordView.swift */,
 				07EF1B4E69AC84B69396F6E9 /* SettingsView.swift */,
 				AB9BC6FFB310A06BB9833D05 /* SetupView.swift */,
@@ -617,6 +620,7 @@
 				2666D4F72D9EA14CBF61236A /* MeetingView.swift in Sources */,
 				5E1F0FF7CB14E9354BF9EE63 /* MeetingsView.swift in Sources */,
 				E70B231B93AF815E49EBAFC0 /* MicCapture.swift in Sources */,
+				2F4D976AEC4D621587F5483A /* ModalChrome.swift in Sources */,
 				95F2B03B6FFC8FB8D7461F8E /* ModelStore.swift in Sources */,
 				6813D2A24E3821CED368C7A5 /* NoiseSuppressor.swift in Sources */,
 				202C88863F097118DFE3B8C0 /* OAuth.swift in Sources */,

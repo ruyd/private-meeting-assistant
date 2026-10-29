@@ -31,6 +31,9 @@ struct SettingsView: View {
             Tab("About", systemImage: "info.circle") { AboutSettings() }
         }
         .scenePadding(.top)
+        .background(SettingsWindowChrome())
+        // Escape closes it, as it does the sheets.
+        .onExitCommand { NSApp.keyWindow?.performClose(nil) }
     }
 }
 

@@ -17,11 +17,11 @@ struct SpeakerNamingView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Who spoke?").font(.title2.bold())
-                Text("These voices were told apart in the recording. Name them to use the names in the transcript and summary.")
-                    .foregroundStyle(.secondary)
-            }
+            ModalHeader(
+                title: "Who spoke?",
+                subtitle: "These voices were told apart in the recording. Name them to use the names in the transcript and summary.",
+                closeHelp: "Skip naming (Esc)"
+            ) { finish(saving: false) }
             .padding(20)
             Divider()
             ScrollView {
@@ -34,8 +34,6 @@ struct SpeakerNamingView: View {
             HStack {
                 Text("Names stay on this Mac, with the meeting.").font(.callout).foregroundStyle(.secondary)
                 Spacer()
-                Button("Skip") { finish(saving: false) }
-                    .keyboardShortcut(.cancelAction)
                 Button("Save Names") { finish(saving: true) }
                     .keyboardShortcut(.defaultAction)
             }

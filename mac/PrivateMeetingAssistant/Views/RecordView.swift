@@ -1160,10 +1160,10 @@ private struct CaptureWindowPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Which \(appName) window?").font(.title3.weight(.semibold))
-                Text("Screenshots and videos use it for the rest of this recording, while it's open.").foregroundStyle(.secondary)
-            }
+            ModalHeader(
+                title: "Which \(appName) window?",
+                subtitle: "Screenshots and videos use it for the rest of this recording, while it's open."
+            ) { choose(nil) }
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
                     ForEach(choices) { choice in
@@ -1190,10 +1190,6 @@ private struct CaptureWindowPicker: View {
                 }
             }
             .frame(maxHeight: 420)
-            HStack {
-                Spacer()
-                Button("Cancel", role: .cancel) { choose(nil) }.keyboardShortcut(.cancelAction)
-            }
         }
         .padding(24)
         .frame(width: 560)
