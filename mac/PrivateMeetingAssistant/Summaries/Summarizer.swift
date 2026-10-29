@@ -43,6 +43,19 @@ struct Summarizer {
         return me + them
     }
 
+    /// Below this many words, spoken and typed together, there's nothing to summarize: given "Ah!",
+    /// the model made up a whole meeting about a project launch.
+    static let minimumWords = 12
+    static let tooLittle = "Too little was said to summarize."
+
+    /// Words with at least one letter or digit in them.
+    static func wordCount(_ text: String) -> Int {
+        text.split(whereSeparator: \.isWhitespace).filter { $0.contains { $0.isLetter || $0.isNumber } }.count
+    }
+
+    /// How the model is told to handle a meeting with little in it.
+    private static let substanceNote = "If the material says little of substance, say so plainly in one sentence and leave decisions and action items empty. Never make up topics, projects, problems or tasks."
+
     enum Failure: LocalizedError {
         case emptyTranscript
         case unreachable(String)
@@ -72,6 +85,9 @@ struct Summarizer {
             + Self.participantsNote(participants)
         let transcript = Self.transcriptText(segments)
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Failure.emptyTranscript }
+        if segments.reduce(Self.wordCount(notes), { $0 + Self.wordCount($1.text) }) < Self.minimumWords {
+            return MeetingSummary(summary: Self.tooLittle)
+        }
 
         let chunks = Self.chunkLines(transcript, max: chunkCharacters)
         var material: String
@@ -103,7 +119,7 @@ struct Summarizer {
             - "summary": a short paragraph (3-6 sentences) of what the meeting was about and its outcome
             - "decisions": decisions that were actually agreed (empty list if none)
             - "actionItems": concrete follow-up tasks, each with "text" and "owner" (the speaker label of the person who took it on or was asked to do it: "Me", a name, or "Participant N"; or "" if unclear). Keep the owner out of "text". Only include tasks someone committed to or was asked to do.
-            Use only information present in the material. Do not invent names.
+            Use only information present in the material. Do not invent names. \(Self.substanceNote)
 
             \(material)
             """, format: Self.schema, unload: true)
@@ -129,7 +145,7 @@ struct Summarizer {
     /// The summary's shape, for guided generation.
     @Generable
     struct GeneratedSummary {
-        @Guide(description: "A short paragraph (3-6 sentences) of what the meeting was about and its outcome")
+        @Guide(description: "A short paragraph (up to 6 sentences) of what the meeting was about and its outcome, or one sentence saying little was discussed")
         var summary: String
         @Guide(description: "Decisions that were actually agreed; empty if none")
         var decisions: [String]
@@ -147,7 +163,7 @@ struct Summarizer {
 
     private func appleSummary(_ material: String, speakerNote: String) async throws -> MeetingSummary {
         let session = LanguageModelSession(instructions: """
-            You are a meeting assistant. \(speakerNote) Use only information present in the material. Do not invent names.
+            You are a meeting assistant. \(speakerNote) Use only information present in the material. Do not invent names. \(Self.substanceNote)
             """)
         do {
             let response = try await session.respond(

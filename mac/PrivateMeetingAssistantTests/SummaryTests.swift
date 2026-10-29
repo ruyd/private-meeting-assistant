@@ -17,6 +17,15 @@ struct SummarizerTests {
         #expect(throws: Summarizer.Failure.self) { try Summarizer.parse("no json here") }
     }
 
+    /// A seven-second "Ah!" and a row of typed s's: nothing to summarize, so no model is asked
+    /// (Apple's made up a product launch from it).
+    @Test func tooLittleSaidIsNotSummarized() async throws {
+        let segments = [Segment(id: 1, meetingID: 1, source: .mic, startMs: 2_000, endMs: 3_000, text: "Ah!", speaker: "Me")]
+        let summary = try await Summarizer(backend: .apple).summarize(segments, notes: "ssssssssssss")
+        #expect(summary == MeetingSummary(summary: Summarizer.tooLittle))
+        #expect(Summarizer.wordCount("Okay, this is... — ✓ 42") == 4)
+    }
+
     @Test func chunksRespectTheLimit() {
         let text = (0..<100).map { "line \($0) " + String(repeating: "x", count: 50) }.joined(separator: "\n")
         let chunks = Summarizer.chunkLines(text, max: 500)
@@ -94,5 +103,25 @@ struct AppleSummaryTests {
         print("apple summary: \(summary)")
         #expect(!summary.summary.isEmpty)
         #expect(summary.actionItems.contains { $0.text.lowercased().contains("screenshot") && $0.owner == "Participant 2" })
+    }
+
+    /// Small talk while testing the mic: long enough to go to the model, but nothing was decided
+    /// or taken on, so none should be made up.
+    @Test(.timeLimit(.minutes(3)))
+    func smallTalkGetsNoInventedItems() async throws {
+        let lines = [
+            "Hello, can you hear me okay?",
+            "Yes, I can hear you fine.",
+            "Okay, let me test the microphone one more time.",
+            "Sounds good, it works now.",
+        ]
+        let segments = lines.enumerated().map { i, text in
+            Segment(id: Int64(i), meetingID: 1, source: i % 2 == 0 ? .mic : .system, startMs: i * 3_000, endMs: i * 3_000 + 2_500, text: text,
+                    speaker: i % 2 == 0 ? "Me" : "Them")
+        }
+        let summary = try await Summarizer(backend: .apple).summarize(segments)
+        print("apple small talk: \(summary)")
+        #expect(summary.decisions.isEmpty)
+        #expect(summary.actionItems.isEmpty)
     }
 }
