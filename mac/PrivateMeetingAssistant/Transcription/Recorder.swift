@@ -173,6 +173,10 @@ final class Recorder {
         heard = [:]
         mutedSpans = isMicMuted ? [MutedSpan(startMs: 0)] : []
         audioFile.set(nil)
+        // The saved audio's mic: the echo-removed one when echo removal runs (it works at 16 kHz),
+        // otherwise (headphones, an in-person meeting) the mic at full quality. The call is always
+        // at full quality.
+        let savedMicIsSpeech = self.removeEcho
         let pipeline = TranscriptionPipeline(
             transcriber: transcriber,
             language: language,
@@ -180,9 +184,8 @@ final class Recorder {
             removeEcho: removeEcho && capture.captureSystemAudio,
             voiceprinter: voiceprinter,
             identifySpeakers: capture.captureSystemAudio ? [.system] : [.mic],
-            // The saved audio gets the mic after echo removal, like the transcript.
             onAudio: { [audioFile, live, videoMic] source, samples, position in
-                audioFile.append(samples, from: source, at: position)
+                if source == .mic, savedMicIsSpeech { audioFile.appendSpeech(samples, from: .mic, at: position) }
                 live.append(samples, from: source, at: position)
                 if source == .mic { videoMic.append(samples, at: position) }
             },
@@ -195,10 +198,13 @@ final class Recorder {
             },
             onBacklog: { count in Task { @MainActor [weak self] in self?.backlog = count } }
         )
-        await capture.start(consumer: { [micMuted] chunk in
-            pipeline.append(chunk.source == .mic && micMuted.isOn
-                ? AudioChunk(source: .mic, samples: [Float](repeating: 0, count: chunk.samples.count), hostTime: chunk.hostTime)
-                : chunk)
+        await capture.start(consumer: { [micMuted, audioFile] chunk in
+            let chunk = chunk.source == .mic && micMuted.isOn
+                ? AudioChunk(source: .mic, samples: [Float](repeating: 0, count: chunk.samples.count), hostTime: chunk.hostTime,
+                             full: chunk.full.map { [Float](repeating: 0, count: $0.count) })
+                : chunk
+            pipeline.append(chunk)
+            if chunk.source == .system || !savedMicIsSpeech { audioFile.appendFull(chunk) }
         })
         guard capture.state == .running else {
             await pipeline.finish()
@@ -714,8 +720,11 @@ private final class AudioFileBox: Sendable {
     private let value = Mutex<AudioFileRecorder?>(nil)
     var recorder: AudioFileRecorder? { value.withLock { $0 } }
     func set(_ recorder: AudioFileRecorder?) { value.withLock { $0 = recorder } }
-    func append(_ samples: [Float], from source: AudioSource, at position: Int) {
-        recorder?.append(samples, from: source, at: position)
+    func appendSpeech(_ samples: [Float], from source: AudioSource, at position: Int) {
+        recorder?.appendSpeech(samples, from: source, at: position)
+    }
+    func appendFull(_ chunk: AudioChunk) {
+        recorder?.appendFull(chunk)
     }
 }
 

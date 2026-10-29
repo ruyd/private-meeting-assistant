@@ -37,7 +37,12 @@ final class LowCutFilter {
     }
 
     // Butterworth: the two sections' Qs for 4th order.
-    private var sections = [0.5412, 1.3066].map { Biquad(cutoff: LowCutFilter.cutoff, q: $0, sampleRate: MonoResampler.sampleRate) }
+    private var sections: [Biquad]
+
+    /// For 16 kHz audio unless told otherwise (the saved audio's full-quality mic is 48 kHz).
+    init(sampleRate: Double = MonoResampler.sampleRate) {
+        sections = [0.5412, 1.3066].map { Biquad(cutoff: LowCutFilter.cutoff, q: $0, sampleRate: sampleRate) }
+    }
 
     func process(_ samples: [Float]) -> [Float] {
         var out = samples

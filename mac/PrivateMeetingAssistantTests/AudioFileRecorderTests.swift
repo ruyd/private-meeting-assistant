@@ -8,6 +8,14 @@ struct AudioFileRecorderTests {
         (0..<Int(16_000 * seconds)).map { 0.3 * sin(2 * .pi * frequency * Float($0) / 16_000) }
     }
 
+    /// Interleaved stereo at 48 kHz, as capture hands over for the saved audio.
+    private func fullTone(_ seconds: Double, frequency: Float, left: Float = 0.3, right: Float = 0.3) -> [Float] {
+        (0..<Int(48_000 * seconds)).flatMap { i -> [Float] in
+            let v = sin(2 * .pi * frequency * Float(i) / 48_000)
+            return [left * v, right * v]
+        }
+    }
+
     private func rms(_ samples: ArraySlice<Float>) -> Float {
         (samples.reduce(0) { $0 + $1 * $1 } / Float(max(samples.count, 1))).squareRoot()
     }
@@ -18,20 +26,20 @@ struct AudioFileRecorderTests {
         let start = mach_absolute_time()
         let recorder = try AudioFileRecorder(url: url, startHostTime: start, isOn: true)
 
-        func feed(_ source: AudioSource, _ samples: [Float], at seconds: Double) {
-            for offset in stride(from: 0, to: samples.count, by: 1_600) {
-                let hostTime = start + AVAudioTime.hostTime(forSeconds: seconds + Double(offset) / 16_000)
-                recorder.append(AudioChunk(source: source, samples: Array(samples[offset..<min(offset + 1_600, samples.count)]), hostTime: hostTime))
+        func feed(_ source: AudioSource, _ frames: [Float], at seconds: Double) {
+            for offset in stride(from: 0, to: frames.count, by: 9_600) {
+                let hostTime = start + AVAudioTime.hostTime(forSeconds: seconds + Double(offset / 2) / 48_000)
+                recorder.appendFull(AudioChunk(source: source, samples: [], hostTime: hostTime, full: Array(frames[offset..<min(offset + 9_600, frames.count)])))
             }
         }
         // 0–2 s: the mic. 3–4 s: system audio after a gap (it only flows while something plays).
-        feed(.mic, tone(2, frequency: 300), at: 0)
-        feed(.system, tone(1, frequency: 500), at: 3)
+        feed(.mic, fullTone(2, frequency: 300), at: 0)
+        feed(.system, fullTone(1, frequency: 500), at: 3)
         // 4–5 s: saving turned off, the mic still talking; 5–6 s: on again.
         recorder.setOn(false)
-        feed(.mic, tone(1, frequency: 300), at: 4)
+        feed(.mic, fullTone(1, frequency: 300), at: 4)
         recorder.setOn(true)
-        feed(.mic, tone(1, frequency: 300), at: 5)
+        feed(.mic, fullTone(1, frequency: 300), at: 5)
         await recorder.finish()
 
         let file = try AVAudioFile(forReading: url)
@@ -64,7 +72,7 @@ struct AudioFileRecorderTests {
         for (i, offset) in stride(from: 0, to: toneSamples.count, by: 1_600).enumerated() {
             // Timestamps wander up to ±12 samples (0.75 ms) from where the samples really belong.
             let drift = [0, 7, -5, 12, -12, 3][i % 6]
-            recorder.append(Array(toneSamples[offset..<min(offset + 1_600, toneSamples.count)]), from: .mic, at: position + drift)
+            recorder.appendSpeech(Array(toneSamples[offset..<min(offset + 1_600, toneSamples.count)]), from: .mic, at: position + drift)
             position += 1_600
         }
         await recorder.finish()
@@ -74,9 +82,35 @@ struct AudioFileRecorderTests {
         try file.read(into: buffer)
         let samples = Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)))
         // Skip the encoder's start and end; in between, no millisecond of the tone may go quiet.
-        let body = samples[3_200..<(samples.count - 3_200)]
-        let quietMs = stride(from: body.startIndex, to: body.endIndex - 16, by: 16).filter { rms(body[$0..<$0 + 16]) < 0.05 }.count
+        let body = samples[9_600..<(samples.count - 9_600)]
+        let quietMs = stride(from: body.startIndex, to: body.endIndex - 48, by: 48).filter { rms(body[$0..<$0 + 48]) < 0.05 }.count
         #expect(quietMs == 0, "\(quietMs) quiet milliseconds inside the tone")
+    }
+
+    /// The call keeps its full quality: 48 kHz stereo, with sound well above what 16 kHz can carry
+    /// (a 12 kHz tone) and its left and right apart.
+    @Test func keepsTheCallAtFullQuality() async throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "audio-\(UUID().uuidString).m4a")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let start = mach_absolute_time()
+        let recorder = try AudioFileRecorder(url: url, startHostTime: start, isOn: true)
+        let frames = fullTone(3, frequency: 12_000, left: 0.3, right: 0.05)
+        for offset in stride(from: 0, to: frames.count, by: 9_600) {
+            let hostTime = start + AVAudioTime.hostTime(forSeconds: Double(offset / 2) / 48_000)
+            recorder.appendFull(AudioChunk(source: .system, samples: [], hostTime: hostTime, full: Array(frames[offset..<min(offset + 9_600, frames.count)])))
+        }
+        await recorder.finish()
+
+        let file = try AVAudioFile(forReading: url)
+        #expect(file.processingFormat.sampleRate == 48_000)
+        #expect(file.processingFormat.channelCount == 2)
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)))
+        try file.read(into: buffer)
+        let n = Int(buffer.frameLength)
+        let left = Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: n))[48_000..<96_000]
+        let right = Array(UnsafeBufferPointer(start: buffer.floatChannelData![1], count: n))[48_000..<96_000]
+        #expect(rms(left) > 0.15, "the 12 kHz tone is there: \(rms(left))")
+        #expect(rms(right) < rms(left) / 3, "left and right stay apart")
     }
 
     @Test func transcriptLinksAudioAndVideos() {

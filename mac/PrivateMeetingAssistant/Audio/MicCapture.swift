@@ -10,6 +10,8 @@ final class MicCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let resampler = MonoResampler()
     private let lowCut = LowCutFilter()
+    private let full = FullRateConverter()
+    private let fullLowCut = LowCutFilter(sampleRate: FullRateConverter.sampleRate)
     /// nil follows the system default input.
     private let deviceUID: String?
     private let onChunk: @Sendable (AudioChunk) -> Void
@@ -62,14 +64,18 @@ final class MicCapture: @unchecked Sendable {
         log.notice("mic input format: \(format.description, privacy: .public)")
         let resampler = resampler
         let lowCut = lowCut
+        let full = full
+        let fullLowCut = fullLowCut
         let onChunk = onChunk
         // The tap block runs on an AVAudioEngine worker thread (not the real-time thread),
         // so converting here is fine and keeps the resampler and filter on a single thread.
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, when in
             guard let converted = try? resampler.convert(buffer), !converted.isEmpty else { return }
             let samples = lowCut.process(converted)
+            // Full quality too, for the saved audio: a mic is one voice, so mono, filtered alike.
+            let fullMono = full.convert(buffer).first.map { fullLowCut.process($0) }
             let hostTime = when.isHostTimeValid ? when.hostTime : mach_absolute_time()
-            onChunk(AudioChunk(source: .mic, samples: samples, hostTime: hostTime))
+            onChunk(AudioChunk(source: .mic, samples: samples, hostTime: hostTime, full: fullMono.flatMap { FullRateConverter.stereo([$0]) }))
         }
         engine.prepare()
         try engine.start()

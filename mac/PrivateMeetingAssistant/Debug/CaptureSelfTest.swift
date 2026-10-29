@@ -97,10 +97,10 @@ extension CaptureSelfTest {
 
 extension CaptureSelfTest {
     /// `--transcribe-test <seconds> <output-dir> [--model <id>] [--app <bundle-id>] [--keep-echo]
-    /// [--video | --video-mic] [--cut] [--muted]`: records with live transcription and writes transcript.json (lines in
+    /// [--video | --video-mic] [--cut] [--muted] [--save-audio]`: records with live transcription and writes transcript.json (lines in
     /// order, with timing). `--video` records the app's window from 2 s in until 2 s before the end
     /// (`--video-mic` with your voice mixed in, `--cut` cut down to the video in it), into the output
-    /// folder's Meetings. `--muted` starts with the microphone muted.
+    /// folder's Meetings. `--muted` starts with the microphone muted; `--save-audio` saves audio.m4a.
     @MainActor
     static func transcribe(seconds: Double, to dir: URL, args: [String]) async {
         let modelID = args.firstIndex(of: "--model").flatMap { args.count > $0 + 1 ? args[$0 + 1] : nil }
@@ -114,7 +114,7 @@ extension CaptureSelfTest {
         }
         recorder.isMicMuted = args.contains("--muted")
         let clock = ContinuousClock.now
-        await recorder.start(title: "Self-test", model: model, language: "en", removeEcho: !args.contains("--keep-echo"))
+        await recorder.start(title: "Self-test", model: model, language: "en", removeEcho: !args.contains("--keep-echo"), saveAudio: args.contains("--save-audio"))
         log.notice("transcribe test: started in \(ContinuousClock.now - clock, privacy: .public), phase \(String(describing: recorder.phase), privacy: .public), error \(recorder.error ?? "none", privacy: .public)")
         if args.contains("--video") || args.contains("--video-mic"), seconds > 5 {
             try? await Task.sleep(for: .seconds(2))

@@ -112,6 +112,7 @@ final class SystemAudioCapture: @unchecked Sendable {
         self.aggregate = aggregate
 
         let resampler = MonoResampler()
+        let full = FullRateConverter()
         let onChunk = onChunk
         let tapFormat = format
         var procID: AudioDeviceIOProcID?
@@ -121,7 +122,7 @@ final class SystemAudioCapture: @unchecked Sendable {
             else { return }
             let time = inputTime.pointee
             let hostTime = time.mFlags.contains(.hostTimeValid) ? time.mHostTime : mach_absolute_time()
-            onChunk(AudioChunk(source: .system, samples: samples, hostTime: hostTime))
+            onChunk(AudioChunk(source: .system, samples: samples, hostTime: hostTime, full: FullRateConverter.stereo(full.convert(buffer))))
         }
         guard status == noErr, let procID else { throw CaptureError.tapFailed("IO proc error \(status)") }
         ioProcID = procID
