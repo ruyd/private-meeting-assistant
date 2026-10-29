@@ -9,6 +9,8 @@ a successful release they add the build to **Published builds** and tag the comm
 
 ## Unreleased
 
+- Saved audio no longer crackles: small gaps and overlaps between captured chunks (2–9 ms dropouts) are gone.
+
 ## 1.0.0 — 2026-10-28
 
 First public release, on the Mac App Store and as a notarized download.

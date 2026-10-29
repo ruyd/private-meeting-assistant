@@ -17,9 +17,16 @@ final class AudioFileRecorder: Sendable {
     static let rate = MonoResampler.sampleRate
     /// How far behind the newest audio the mix is written, for the other source to catch up.
     private static let latencySamples = Int(rate * 2)
+    /// A source's audio that lands within this of where its previous audio ended continues from there:
+    /// timestamps drift against the sample count (the device's clock, resampling), and placing each
+    /// chunk exactly by its timestamp left millisecond gaps and overlaps, heard as crackling. Further
+    /// off is a real gap (system audio only flows while something plays), as transcription treats it.
+    static let continuityTolerance = Int(rate * 0.2)
 
     private struct State {
         var isOn: Bool
+        /// Where each source's audio so far ends, in meeting samples.
+        var next: [AudioSource: Int] = [:]
         /// The mix not yet written, starting at meeting sample `written`.
         var mix: [Float] = []
         var written = 0
@@ -56,12 +63,17 @@ final class AudioFileRecorder: Sendable {
     /// Called from audio threads with a captured chunk, placed by its host time.
     func append(_ chunk: AudioChunk) {
         let seconds = AVAudioTime.seconds(forHostTime: chunk.hostTime) - AVAudioTime.seconds(forHostTime: startHostTime)
-        append(chunk.samples, at: max(Int(seconds * Self.rate), 0))
+        append(chunk.samples, from: chunk.source, at: max(Int(seconds * Self.rate), 0))
     }
 
-    /// Called from audio threads with audio at a meeting sample position.
-    func append(_ samples: [Float], at position: Int) {
+    /// Called from audio threads with a source's audio at (about) a meeting sample position.
+    func append(_ samples: [Float], from source: AudioSource, at position: Int) {
         let ready = state.withLock { state -> [Float]? in
+            var position = position
+            if let expected = state.next[source], abs(position - expected) <= Self.continuityTolerance {
+                position = expected
+            }
+            state.next[source] = position + samples.count
             state.newest = max(state.newest, position + samples.count)
             if state.isOn {
                 Self.add(samples, at: position, into: &state)

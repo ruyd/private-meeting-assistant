@@ -116,7 +116,7 @@ final class Recorder {
             voiceprinter: voiceprinter,
             identifySpeakers: capture.captureSystemAudio ? [.system] : [.mic],
             // The saved audio gets the mic after echo removal, like the transcript.
-            onAudio: { [audioFile] _, samples, position in audioFile.append(samples, at: position) },
+            onAudio: { [audioFile] source, samples, position in audioFile.append(samples, from: source, at: position) },
             onLine: { [undelivered] line in
                 undelivered.add(1)
                 Task { @MainActor [weak self] in
@@ -361,5 +361,7 @@ private final class AudioFileBox: Sendable {
     private let value = Mutex<AudioFileRecorder?>(nil)
     var recorder: AudioFileRecorder? { value.withLock { $0 } }
     func set(_ recorder: AudioFileRecorder?) { value.withLock { $0 = recorder } }
-    func append(_ samples: [Float], at position: Int) { recorder?.append(samples, at: position) }
+    func append(_ samples: [Float], from source: AudioSource, at position: Int) {
+        recorder?.append(samples, from: source, at: position)
+    }
 }

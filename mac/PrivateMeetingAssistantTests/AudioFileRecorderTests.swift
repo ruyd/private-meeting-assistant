@@ -52,6 +52,33 @@ struct AudioFileRecorderTests {
         #expect(rms(second(5)) > 0.15)
     }
 
+    /// Chunk timestamps drift a few samples against the audio's own length (the device clock, the
+    /// resampler). Placing each chunk exactly by its timestamp left millisecond gaps of silence and
+    /// overlaps, heard as crackling; the file should be one continuous tone.
+    @Test func jitteryTimestampsMakeNoGaps() async throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "audio-\(UUID().uuidString).m4a")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let recorder = try AudioFileRecorder(url: url, startHostTime: mach_absolute_time(), isOn: true)
+        let toneSamples = tone(6, frequency: 440)
+        var position = 0
+        for (i, offset) in stride(from: 0, to: toneSamples.count, by: 1_600).enumerated() {
+            // Timestamps wander up to ±12 samples (0.75 ms) from where the samples really belong.
+            let drift = [0, 7, -5, 12, -12, 3][i % 6]
+            recorder.append(Array(toneSamples[offset..<min(offset + 1_600, toneSamples.count)]), from: .mic, at: position + drift)
+            position += 1_600
+        }
+        await recorder.finish()
+
+        let file = try AVAudioFile(forReading: url)
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)))
+        try file.read(into: buffer)
+        let samples = Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)))
+        // Skip the encoder's start and end; in between, no millisecond of the tone may go quiet.
+        let body = samples[3_200..<(samples.count - 3_200)]
+        let quietMs = stride(from: body.startIndex, to: body.endIndex - 16, by: 16).filter { rms(body[$0..<$0 + 16]) < 0.05 }.count
+        #expect(quietMs == 0, "\(quietMs) quiet milliseconds inside the tone")
+    }
+
     @Test func transcriptLinksAudioAndVideos() {
         let meeting = Meeting(
             id: 1, title: "Demo", startedAt: Date(), summaryStatus: "none", segmentCount: 1, durationMs: 60_000,
