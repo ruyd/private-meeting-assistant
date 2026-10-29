@@ -8,6 +8,8 @@ enum SettingsKeys {
     static let removeEcho = "removeEcho"
     static let identifySpeakers = "identifySpeakers"
     static let saveAudio = "saveAudio"
+    /// Show words as they're spoken while recording (Live), or only Whisper's lines (Delayed).
+    static let liveTranscript = "liveTranscript"
 }
 
 /// The Settings window: one tab per area, each setting with a plain-language note on what it does.

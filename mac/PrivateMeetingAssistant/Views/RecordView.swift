@@ -809,6 +809,18 @@ private struct LiveRecordingView: View {
                     Label(micName, systemImage: "mic").chipStyle()
                 }
                 Spacer()
+                // As in the recording design: words as they're spoken, or only the final lines.
+                Picker("Transcript", selection: Binding(
+                    get: { recorder.showsLiveText },
+                    set: { on in Task { await recorder.setLiveText(on) } }
+                )) {
+                    Text("Live").tag(true)
+                    Text("Delayed").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help("Live shows words as they're spoken (on-device, then replaced by the final, more accurate line). Delayed shows only the final lines, a few seconds after each phrase.")
             }
             .font(.callout)
 
@@ -845,6 +857,11 @@ private struct LiveRecordingView: View {
                             VideoRow(video: video, isRecording: recorder.isRecordingVideo && video == recorder.videos.last)
                         }
                     }
+                    ForEach(liveSources, id: \.self) { source in
+                        LiveTextRow(
+                            speaker: liveSpeaker(source), source: source, text: recorder.liveText[source] ?? ""
+                        )
+                    }
                     status.id("bottom")
                 }
                 .padding(.horizontal, 28)
@@ -854,18 +871,39 @@ private struct LiveRecordingView: View {
             .onChange(of: items.count) {
                 withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
             }
+            .onChange(of: recorder.liveText) {
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
             .overlay {
-                if items.isEmpty {
+                if items.isEmpty, liveSources.isEmpty {
                     ContentUnavailableView(
                         "Listening…",
                         systemImage: "waveform",
-                        description: Text(recorder.identifiesSpeakers
-                            ? "Lines appear a few seconds after they're spoken, each voice as its own participant."
-                            : "Lines appear a few seconds after they're spoken: you as “Me”, the other participants as “Them”.")
+                        description: Text(emptyDescription)
                     )
                 }
             }
         }
+    }
+
+    private var emptyDescription: String {
+        let timing = recorder.showsLiveText
+            ? "Words appear as they're spoken, then the final line a few seconds later"
+            : "Lines appear a few seconds after they're spoken"
+        return recorder.identifiesSpeakers
+            ? "\(timing), each voice as its own participant."
+            : "\(timing): you as “Me”, the other participants as “Them”."
+    }
+
+    /// Sources with words being spoken right now, mic first.
+    private var liveSources: [AudioSource] {
+        AudioSource.allCases.filter { recorder.liveText[$0]?.isEmpty == false }
+    }
+
+    /// Who the live text is from, as far as is known before Whisper and the speaker model have run.
+    private func liveSpeaker(_ source: AudioSource) -> String {
+        if recorder.identifiesSpeakers, source == .system || !session.captureSystemAudio { return "Speaking" }
+        return source.speaker
     }
 
     @ViewBuilder private var status: some View {
@@ -1069,6 +1107,38 @@ struct SpeakerRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+}
+
+/// Words being spoken right now, before Whisper's final line replaces them: grey text, a "Live" tag
+/// and a cursor, as in the recording design.
+private struct LiveTextRow: View {
+    let speaker: String
+    let source: AudioSource
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "waveform")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 32, height: 32)
+                .background(SpeakerStyle.color(source, participant: nil).opacity(0.5), in: .circle)
+                .symbolEffect(.variableColor.iterative)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(speaker).font(.callout.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("Live").font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                }
+                (Text(text) + Text(" ▍").foregroundStyle(.orange))
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(speaker), live: \(text)")
     }
 }
 

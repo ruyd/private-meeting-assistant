@@ -1,6 +1,9 @@
 import Foundation
 import Observation
 import Synchronization
+import OSLog
+
+private let liveLog = Logger(subsystem: "dev.ruy.private-meeting-assistant", category: "live-transcript")
 
 /// A recording in progress: audio capture, live transcription and the transcript so far. Each line is
 /// saved to the index as it's transcribed, and the meeting's folder (transcript.md) is kept up to date.
@@ -31,6 +34,17 @@ final class Recorder {
     @ObservationIgnored private var windowRecorder: WindowRecorder?
     /// The audio file, once saving audio was first turned on; the capture threads write to it.
     @ObservationIgnored private let audioFile = AudioFileBox()
+    /// Words as they're spoken, per source, until Whisper's line for that stretch arrives
+    /// (`LiveTranscriber`); empty while showing live text is off.
+    private(set) var liveText: [AudioSource: String] = [:]
+    /// Whether live text is shown (the live view's Live / Delayed switch).
+    private(set) var showsLiveText = false
+    @ObservationIgnored private let live = LiveTranscriberBox()
+    @ObservationIgnored private var liveFragments: [AudioSource: (finals: [LiveTranscriber.Fragment], volatile: LiveTranscriber.Fragment?)] = [:]
+    /// How far Whisper's lines reach on each source, in meeting milliseconds: live text up to here is
+    /// replaced by them.
+    @ObservationIgnored private var whisperReachMs: [AudioSource: Int] = [:]
+    @ObservationIgnored private var liveLocale = Locale.current
     @ObservationIgnored private var startHostTime: UInt64 = 0
 
     @ObservationIgnored private var transcriber: Transcriber?
@@ -116,7 +130,10 @@ final class Recorder {
             voiceprinter: voiceprinter,
             identifySpeakers: capture.captureSystemAudio ? [.system] : [.mic],
             // The saved audio gets the mic after echo removal, like the transcript.
-            onAudio: { [audioFile] source, samples, position in audioFile.append(samples, from: source, at: position) },
+            onAudio: { [audioFile, live] source, samples, position in
+                audioFile.append(samples, from: source, at: position)
+                live.append(samples, from: source, at: position)
+            },
             onLine: { [undelivered] line in
                 undelivered.add(1)
                 Task { @MainActor [weak self] in
@@ -139,6 +156,65 @@ final class Recorder {
         startedAt = started
         phase = .recording
         if saveAudio { setSavingAudio(true) }
+        liveLocale = language.map { Locale(identifier: $0) } ?? Locale.current
+        // In the background: the recognizer's language model may still be downloading the first time.
+        Task { await setLiveText(UserDefaults.standard.object(forKey: SettingsKeys.liveTranscript) as? Bool ?? true) }
+    }
+
+    // MARK: Live text
+
+    /// Shows words as they're spoken (Apple's on-device recognizer, per source) or only Whisper's
+    /// lines. Remembered for the next recording.
+    func setLiveText(_ on: Bool) async {
+        UserDefaults.standard.set(on, forKey: SettingsKeys.liveTranscript)
+        showsLiveText = on
+        guard phase == .recording || phase == .loadingModel else { return }
+        if !on {
+            await live.stopAll()
+            liveFragments = [:]
+            liveText = [:]
+            return
+        }
+        let sources: [AudioSource] = capture.captureSystemAudio ? [.mic, .system] : [.mic]
+        for source in sources where !live.has(source) {
+            liveLog.notice("starting live text for \(source.rawValue, privacy: .public)")
+            let transcriber = await LiveTranscriber.start(locale: liveLocale) { [weak self] fragment in
+                Task { @MainActor in self?.receive(fragment, from: source) }
+            }
+            // Turned off, or the recording stopped, while the recognizer was starting.
+            guard showsLiveText, phase == .recording, let transcriber else {
+                await transcriber?.stop()
+                continue
+            }
+            live.set(transcriber, for: source)
+        }
+    }
+
+    private func receive(_ fragment: LiveTranscriber.Fragment, from source: AudioSource) {
+        if liveFragments[source] == nil { liveLog.notice("first live text from \(source.rawValue, privacy: .public)") }
+        guard showsLiveText else { return }
+        var f = liveFragments[source] ?? ([], nil)
+        if fragment.isFinal {
+            f.finals.append(fragment)
+            f.volatile = nil
+        } else {
+            f.volatile = fragment
+        }
+        liveFragments[source] = f
+        updateLiveText(source)
+    }
+
+    /// The live text not yet covered by Whisper's lines on that source: a fragment goes once Whisper
+    /// reaches past its middle. (Apple's fragments can span several of Whisper's lines and end a little
+    /// after them, so waiting for Whisper to pass their end left stale text showing.)
+    private func updateLiveText(_ source: AudioSource) {
+        guard var f = liveFragments[source] else { return }
+        let reach = whisperReachMs[source] ?? -1
+        f.finals.removeAll { $0.isCovered(byWhisperReaching: reach) }
+        if f.volatile?.isCovered(byWhisperReaching: reach) == true { f.volatile = nil }
+        liveFragments[source] = f
+        let text = (f.finals.map(\.text) + [f.volatile?.text].compactMap { $0 }).joined(separator: " ")
+        liveText[source] = text.isEmpty ? nil : text
     }
 
     // MARK: Audio and video
@@ -227,6 +303,10 @@ final class Recorder {
         phase = .finishing
         capture.stop()
         await windowRecorder?.stop()
+        await live.stopAll()
+        liveFragments = [:]
+        liveText = [:]
+        whisperReachMs = [:]
         // Transcription hands the audio file the mic audio echo removal was still holding back.
         await pipeline.finish()
         await audioFile.recorder?.finish()
@@ -303,6 +383,9 @@ final class Recorder {
     }
 
     private func insert(_ line: TranscriptLine) {
+        // Whisper's line replaces the live text for its stretch, even if it turns out to be echo.
+        whisperReachMs[line.source] = max(whisperReachMs[line.source] ?? 0, line.endMs)
+        updateLiveText(line.source)
         // Lines arrive in the order Whisper finishes them, so an echoed "Me" line may come before or
         // after the "Them" line it repeats.
         if removeEcho {
@@ -363,5 +446,22 @@ private final class AudioFileBox: Sendable {
     func set(_ recorder: AudioFileRecorder?) { value.withLock { $0 = recorder } }
     func append(_ samples: [Float], from source: AudioSource, at position: Int) {
         recorder?.append(samples, from: source, at: position)
+    }
+}
+
+/// The live recognizers, per source: started from the main actor, fed from capture threads.
+private final class LiveTranscriberBox: Sendable {
+    private let value = Mutex<[AudioSource: LiveTranscriber]>([:])
+    func has(_ source: AudioSource) -> Bool { value.withLock { $0[source] != nil } }
+    func set(_ transcriber: LiveTranscriber, for source: AudioSource) { value.withLock { $0[source] = transcriber } }
+    func append(_ samples: [Float], from source: AudioSource, at position: Int) {
+        value.withLock { $0[source] }?.append(samples, at: position)
+    }
+    func stopAll() async {
+        let all = value.withLock { all in
+            defer { all = [:] }
+            return Array(all.values)
+        }
+        for transcriber in all { await transcriber.stop() }
     }
 }

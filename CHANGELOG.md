@@ -9,6 +9,7 @@ a successful release they add the build to **Published builds** and tag the comm
 
 ## Unreleased
 
+- Live transcript: words appear as they're spoken (about half a second, with Apple's on-device recognizer), then Whisper's more accurate line replaces them a few seconds later. The Live / Delayed switch in the recording view turns it off.
 - Saved audio no longer crackles: small gaps and overlaps between captured chunks (2–9 ms dropouts) are gone.
 
 ## 1.0.0 — 2026-10-28
