@@ -63,8 +63,14 @@ struct InventedLinesReplay {
             }
             print(String(format: "replay: utterance %5.2f-%5.2fs%@", Double(u.startMs) / 1000, Double(u.endMs) / 1000, silero))
             for line in try await transcriber.transcribe(u.samples, language: "en") {
-                print(String(format: "replay: %5.2f-%5.2fs  noSpeech %.2f confidence %.2f  %@",
-                             Double(u.startMs) / 1000, Double(u.endMs) / 1000, line.noSpeech, line.confidence, line.text))
+                print(String(format: "replay: %5.2f-%5.2fs line %5.2f-%5.2fs  noSpeech %.2f confidence %.2f  %@",
+                             Double(u.startMs) / 1000, Double(u.endMs) / 1000, Double(u.startMs) / 1000 + Double(line.start),
+                             Double(u.startMs) / 1000 + Double(line.end), line.noSpeech, line.confidence, line.text))
+            }
+            if let vad, ProcessInfo.processInfo.environment["SILERO_CHUNKS"] != nil {
+                vad.reset()
+                let p = vad.probabilities(u.samples[...])
+                print("replay:   silero per 32 ms from \(Double(u.startMs) / 1000)s: " + p.map { String(format: "%.0f", $0 * 9) }.joined())
             }
         }
     }

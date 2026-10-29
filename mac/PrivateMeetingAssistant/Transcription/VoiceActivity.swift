@@ -18,8 +18,13 @@ final class VoiceActivity: @unchecked Sendable {
     static let chunk = 512
     /// A chunk this likely to be speech counts as speech…
     static let threshold: Float = 0.5
-    /// …and an utterance needs this many such chunks (about 0.1 s) to be worth transcribing.
+    /// …and a stretch needs this many such chunks (about 0.1 s) to be worth transcribing.
     static let minSpeechChunks = 3
+    /// Speech this close together is one stretch (2.5 s); longer pauses split it. Pauses within a
+    /// sentence run past a second, and Whisper does worse with a sentence in pieces.
+    private static let joinChunks = 78
+    /// Kept around each stretch of speech (0.25 s), for soft word starts and ends.
+    private static let padChunks = 8
     private static let context = 64
     private static let stateSize = 128
 
@@ -57,10 +62,27 @@ final class VoiceActivity: @unchecked Sendable {
         }
     }
 
-    /// Whether someone is talking anywhere in `samples` (judged afresh).
-    func hasSpeech(_ samples: [Float]) -> Bool {
+    /// The parts of `samples` where someone is talking (judged afresh), as sample ranges: speech with
+    /// pauses under 2.5 s joined up, with a quarter second either side. Noise before, after and
+    /// between them is left out, so Whisper can't write "Gracias." over it in front of real words.
+    func speechRanges(in samples: [Float]) -> [Range<Int>] {
         reset()
-        return probabilities(samples[...]).filter { $0 >= Self.threshold }.count >= Self.minSpeechChunks
+        let p = probabilities(samples[...])
+        var stretches: [(first: Int, last: Int, speech: Int)] = []
+        for (i, x) in p.enumerated() where x >= Self.threshold {
+            if let last = stretches.last, i - last.last <= Self.joinChunks {
+                stretches[stretches.count - 1].last = i
+                stretches[stretches.count - 1].speech += 1
+            } else {
+                stretches.append((i, i, 1))
+            }
+        }
+        return stretches.filter { $0.speech >= Self.minSpeechChunks }.map { s in
+            let start = max(s.first - Self.padChunks, 0) * Self.chunk
+            // The last stretch keeps the leftover samples after the final whole chunk.
+            let end = s.last + 1 + Self.padChunks >= p.count ? samples.count : (s.last + 1 + Self.padChunks) * Self.chunk
+            return start..<end
+        }
     }
 
     /// Forgets what it heard, for a new stretch of audio.

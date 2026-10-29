@@ -141,29 +141,30 @@ final class TranscriptionPipeline: Sendable {
         let speakers = speakers
         worker = Task.detached(priority: .userInitiated) {
             for await job in stream {
-                let u = job.utterance
-                // Loud enough for the segmenter but nobody talking (a fan, clicks, a quiet room):
-                // Whisper would write "Thank you." over it.
-                if let voiceActivity, !voiceActivity.hasSpeech(u.samples) {
-                    log.debug("skipped \(u.endMs - u.startMs) ms without speech")
-                    onBacklog(queued.add(-1))
-                    continue
-                }
-                do {
-                    for line in try await transcriber.transcribe(u.samples, language: language) {
-                        var out = TranscriptLine(
-                            source: job.source,
-                            startMs: u.startMs + Int(line.start * 1000),
-                            endMs: min(u.startMs + Int(line.end * 1000), u.endMs),
-                            text: line.text
-                        )
-                        if let voiceprinter, identifySpeakers.contains(job.source) {
-                            out.participant = Self.identify(out, in: u, line: line, voiceprinter: voiceprinter, speakers: speakers)
-                        }
-                        onLine(out)
+                // Only the parts with someone talking: the segmenter goes by loudness, and over a
+                // fan, clicks or a quiet room Whisper writes "Thank you." (or "Gracias.").
+                let parts = voiceActivity.map { vad in
+                    vad.speechRanges(in: job.utterance.samples).map { r in
+                        Segmenter.Utterance(startSample: job.utterance.startSample + r.lowerBound, samples: Array(job.utterance.samples[r]))
                     }
-                } catch {
-                    log.error("transcription failed: \(error.localizedDescription, privacy: .public)")
+                } ?? [job.utterance]
+                for u in parts {
+                    do {
+                        for line in try await transcriber.transcribe(u.samples, language: language) {
+                            var out = TranscriptLine(
+                                source: job.source,
+                                startMs: u.startMs + Int(line.start * 1000),
+                                endMs: min(u.startMs + Int(line.end * 1000), u.endMs),
+                                text: line.text
+                            )
+                            if let voiceprinter, identifySpeakers.contains(job.source) {
+                                out.participant = Self.identify(out, in: u, line: line, voiceprinter: voiceprinter, speakers: speakers)
+                            }
+                            onLine(out)
+                        }
+                    } catch {
+                        log.error("transcription failed: \(error.localizedDescription, privacy: .public)")
+                    }
                 }
                 onBacklog(queued.add(-1))
             }
