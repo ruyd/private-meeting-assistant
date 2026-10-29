@@ -16,7 +16,8 @@ release_checks() {
   [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || problems+=("MARKETING_VERSION in project.yml is \"$VERSION\"; use X.Y.Z.")
   grep -qE "^## $VERSION( |$)" "$CHANGELOG" \
     || problems+=("CHANGELOG.md has no \"## $VERSION\" section: move Unreleased into one first.")
-  if [[ -z "${ALLOW_DIRTY:-}" && -n "$(git status --porcelain)" ]]; then
+  # Untracked files (notes of your own, say) don't go into the build; only tracked changes count.
+  if [[ -z "${ALLOW_DIRTY:-}" && -n "$(git status --porcelain --untracked-files=no)" ]]; then
     problems+=("There are uncommitted changes; commit them so the build matches a commit (or ALLOW_DIRTY=1 for a local try).")
   fi
   local last
