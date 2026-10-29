@@ -283,7 +283,8 @@ final class Recorder {
     var canRecordVideo: Bool { screenshotApp != nil }
 
     /// Starts recording the app's window as video, with your (echo-removed) voice mixed in when
-    /// `withMic` and cut down to where the video is, smaller, when `cutSize`, or stops the
+    /// `withMic` and cut down (full width, without the browser's tabs and the page below the
+    /// video) and smaller when `cutSize`, or stops the
     /// recording in progress. With several windows (a browser's), it records the one whose title
     /// shows a call or a video, or the one chosen before; if neither, it asks
     /// (`videoWindowChoices`, answered with `chooseVideoWindow`).
@@ -348,6 +349,8 @@ final class Recorder {
         let take = withMic ? try VideoMicRecorder() : nil
         videoMic.set(take)
         let requestedAt = mach_absolute_time()
+        // Cut size takes at most an inch off the top (the browser's tabs and toolbar).
+        let cutTop = cutSize ? ScreenCapture.inchShare(of: window) : nil
         let recorder: WindowRecorder
         do {
             recorder = try await WindowRecorder.start(window: window, to: url)
@@ -360,9 +363,9 @@ final class Recorder {
             self.windowRecorder = nil
             self.isRecordingVideo = false
             if let failure { self.error = "The video stopped: \(failure)" }
-            if take != nil || cutSize {
+            if take != nil || cutTop != nil {
                 let startedAt = recorder?.startedHostTime ?? requestedAt
-                self.finishVideo(url, mic: take, cutSize: cutSize, videoStartMs: self.meetingMs(atHostTime: startedAt), meetingID: meetingID)
+                self.finishVideo(url, mic: take, cutTop: cutTop, videoStartMs: self.meetingMs(atHostTime: startedAt), meetingID: meetingID)
             } else {
                 self.scheduleFileWrite(meetingID)
             }
@@ -374,7 +377,8 @@ final class Recorder {
 
     /// Finishes a video: mixes in the mic taken during it, once echo removal has handed over the last
     /// of it, and/or cuts it down to where the video is in the window, smaller.
-    private func finishVideo(_ url: URL, mic take: VideoMicRecorder?, cutSize: Bool, videoStartMs: Int, meetingID: Int64) {
+    /// `cutTop`: cut size, taking at most this share of the height off the top.
+    private func finishVideo(_ url: URL, mic take: VideoMicRecorder?, cutTop: Double?, videoStartMs: Int, meetingID: Int64) {
         isMixingVideo = true
         let videoMic = videoMic
         let task = Task { [weak self] in
@@ -386,11 +390,14 @@ final class Recorder {
                     VideoSoundMixer.Mic(url: take.url, startsAt: Double(first) / MonoResampler.sampleRate - Double(videoStartMs) / 1000)
                 }
             }
-            if mic != nil || cutSize {
+            if mic != nil || cutTop != nil {
                 let finished = url.deletingLastPathComponent().appending(path: ".finishing-" + url.lastPathComponent)
                 do {
                     try await Task.detached(priority: .userInitiated) { [mic] in
-                        let picture = cutSize ? VideoSoundMixer.Picture(crop: await VideoArea.detect(in: url)) : nil
+                        var picture: VideoSoundMixer.Picture?
+                        if let cutTop {
+                            picture = VideoSoundMixer.Picture(crop: VideoArea.verticalCut(detected: await VideoArea.detect(in: url), topLimit: cutTop))
+                        }
                         try await VideoSoundMixer.rewrite(video: url, mic: mic, picture: picture, into: finished)
                         _ = try FileManager.default.replaceItemAt(url, withItemAt: finished)
                     }.value

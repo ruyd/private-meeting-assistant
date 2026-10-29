@@ -53,6 +53,18 @@ enum ScreenCapture {
         videoTitles.contains { title.contains($0) }
     }
 
+    /// How much of `window`'s height an inch is, on the display it's on (from the display's physical
+    /// size; 100 points an inch if it doesn't say).
+    static func inchShare(of window: SCWindow) -> Double {
+        var display: CGDirectDisplayID = 0
+        var count: UInt32 = 0
+        CGGetDisplaysWithPoint(CGPoint(x: window.frame.midX, y: window.frame.midY), 1, &display, &count)
+        let millimetres = count > 0 ? CGDisplayScreenSize(display).width : 0
+        let points = count > 0 ? CGDisplayBounds(display).width : 0
+        let perInch = millimetres > 0 && points > 0 ? points / (millimetres / 25.4) : 100
+        return min(perInch / max(window.frame.height, 1), 0.5)
+    }
+
     /// A small picture of a window, for choosing one.
     @MainActor static func preview(of window: SCWindow, width: CGFloat = 480) async -> CGImage? {
         let filter = SCContentFilter(desktopIndependentWindow: window)

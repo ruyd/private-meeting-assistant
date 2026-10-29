@@ -126,6 +126,17 @@ struct VideoSoundMixerTests {
         #expect(abs(try await asset.load(.duration).seconds - 3) < 0.1)
     }
 
+    /// Cut size keeps the full width, takes at most the limit off the top, and the page below the
+    /// moving area.
+    @Test func cutsVerticallyOnly() {
+        #expect(VideoArea.verticalCut(detected: CGRect(x: 0.2, y: 0.3, width: 0.5, height: 0.4), topLimit: 0.1)
+                == CGRect(x: 0, y: 0.1, width: 1, height: 0.6))
+        #expect(VideoArea.verticalCut(detected: CGRect(x: 0, y: 0.05, width: 1, height: 0.6), topLimit: 0.1)
+                == CGRect(x: 0, y: 0.05, width: 1, height: 0.6))
+        // A frozen window: only the tabs.
+        #expect(VideoArea.verticalCut(detected: nil, topLimit: 0.1) == CGRect(x: 0, y: 0.1, width: 1, height: 0.9))
+    }
+
     /// The area finder keeps the box around sizeable blocks of changing cells and ignores small ones.
     @Test func findsTheChangingBlock() {
         let columns = 60, rows = 40, pairs = 20
@@ -179,7 +190,10 @@ struct VideoAreaReplay {
             if let out = ProcessInfo.processInfo.environment["VIDEO_CUT_OUT"] {
                 let target = URL(fileURLWithPath: out).appending(path: file.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent.prefix(24) + ".mp4")
                 let start = ContinuousClock.now
-                try await VideoSoundMixer.rewrite(video: file, mic: nil, picture: .init(crop: area), into: target)
+                // An inch of a window about 1,080 points tall.
+                let crop = VideoArea.verticalCut(detected: area, topLimit: 0.1)
+                print(String(format: "video cut: keeps y %.3f–%.3f", crop.minY, crop.maxY))
+                try await VideoSoundMixer.rewrite(video: file, mic: nil, picture: .init(crop: crop), into: target)
                 let before = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
                 let after = try target.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
                 print("video cut: \(target.lastPathComponent) \(before / 1_000_000) MB → \(after / 1_000_000) MB in \(ContinuousClock.now - start)")

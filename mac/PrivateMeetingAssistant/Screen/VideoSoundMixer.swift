@@ -6,7 +6,7 @@ private let log = Logger(subsystem: "dev.ruy.private-meeting-assistant", categor
 
 /// Finishes a recorded video. "Record video + mic": the app's sound (48 kHz stereo) and the
 /// echo-removed mic (16 kHz mono, from `VideoMicRecorder`) are mixed and encoded as the video's sound.
-/// "Cut size": the picture is cropped to where the video is (`VideoArea`), scaled to fit 1280×720
+/// "Cut size": the picture is cropped (`VideoArea.verticalCut`), scaled to fit 1280×720
 /// and encoded at 2.5 Mbit/s, instead of copied as it is (ScreenCaptureKit's full window, 2406×2166
 /// at 30–40 Mbit/s for a browser on this Mac).
 enum VideoSoundMixer {

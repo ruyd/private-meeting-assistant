@@ -33,6 +33,16 @@ enum VideoArea {
     private static let minShare = 0.04
     private static let maxShare = 0.9
 
+    /// What cut size keeps: the full width, and from the top of the moving area (but never more
+    /// than `topLimit` off the top: about an inch, the browser's tabs and toolbar) down to its bottom.
+    /// With nothing moving (a covered window that stopped drawing), only the top `topLimit` goes.
+    /// Fractions of the frame, origin at the top left.
+    static func verticalCut(detected: CGRect?, topLimit: Double) -> CGRect {
+        let top = min(detected.map { Double($0.minY) } ?? topLimit, topLimit)
+        let bottom = max(detected.map { Double($0.maxY) } ?? 1, top + 0.1)
+        return CGRect(x: 0, y: top, width: 1, height: min(bottom, 1) - top)
+    }
+
     /// The video's rectangle in the frame, as fractions of its width and height, with the origin at
     /// the top left.
     static func detect(in video: URL) async -> CGRect? {
@@ -63,6 +73,12 @@ enum VideoArea {
             pairs += 1
         }
         guard pairs > 3 else { return nil }
+        if ProcessInfo.processInfo.environment["VIDEO_AREA_TRACE"] != nil {
+            let columns = width / cell
+            for y in 0..<(height / cell) {
+                print("area: " + (0..<columns).map { x in let c = changes[y * columns + x]; return c == 0 ? "." : Double(c) >= activeShare * Double(pairs - 1) ? "#" : "+" }.joined())
+            }
+        }
         return area(changes: changes, columns: width / cell, rows: height / cell, pairs: pairs - 1)
     }
 

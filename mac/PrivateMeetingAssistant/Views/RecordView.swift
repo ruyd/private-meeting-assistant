@@ -1061,7 +1061,7 @@ private struct VideoButton: View {
                 ? "Stop the video (⇧⌘V); the recording goes on"
                 : recorder.screenshotApp.map { app in
                     "Record \(app.name)'s window with its sound" + (withMic ? " and your voice (echo removed)" : "")
-                        + (cutSize ? ", cut down to the video in it (no tabs or page) and smaller" : "")
+                        + (cutSize ? ", without the tabs and the page below the video, smaller" : "")
                         + ", into the meeting's folder (⇧⌘V)"
                 } ?? "Video records the app you're recording; pick one under Sources next time")
 
@@ -1074,7 +1074,7 @@ private struct VideoButton: View {
                 }
                 .pickerStyle(.inline)
                 Divider()
-                Toggle("Cut size: only the video in the window, smaller file", isOn: $cutSize)
+                Toggle("Cut size: without the tabs and the page below, smaller file", isOn: $cutSize)
             } label: {
                 Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
             }
