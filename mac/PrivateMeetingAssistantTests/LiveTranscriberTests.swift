@@ -124,3 +124,15 @@ struct LiveFragmentTests {
     }
 
 }
+
+struct MutedSpanTests {
+    /// Muted from 3.5 s to 20 s, then from 40 s on.
+    @Test func coversWhileMuted() {
+        let spans = [MutedSpan(startMs: 3_500, endMs: 20_000), MutedSpan(startMs: 40_000)]
+        func muted(_ ms: Int) -> Bool { spans.contains { $0.contains(ms) } }
+        #expect(!muted(3_000))
+        #expect(muted(7_000), "a line timed after muting, from speech just before it")
+        #expect(!muted(25_000))
+        #expect(muted(90_000), "still muted")
+    }
+}

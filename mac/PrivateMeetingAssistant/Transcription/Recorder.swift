@@ -41,9 +41,21 @@ final class Recorder {
     /// (transcript, live text, saved audio, a video's mic), keeping the timeline whole. Set before
     /// starting to begin muted.
     var isMicMuted = false {
-        didSet { micMuted.set(isMicMuted) }
+        didSet {
+            micMuted.set(isMicMuted)
+            guard phase == .recording, isMicMuted != oldValue else { return }
+            if isMicMuted {
+                mutedSpans.append(MutedSpan(startMs: elapsedMs))
+            } else if !mutedSpans.isEmpty {
+                mutedSpans[mutedSpans.count - 1].endMs = elapsedMs
+            }
+        }
     }
     @ObservationIgnored private let micMuted = Flag()
+    /// When the mic was muted, in meeting milliseconds. Speech from just before muting is
+    /// transcribed a little later and its line can be timed into the muted stretch: a "Me" line
+    /// centred in one is dropped.
+    @ObservationIgnored private var mutedSpans: [MutedSpan] = []
 
     /// Videos being finished (mic mixed in, cut down), shown as such in the transcript.
     private(set) var finishingVideos: Set<URL> = []
@@ -151,6 +163,7 @@ final class Recorder {
         identifiesSpeakers = voiceprinter != nil
         startHostTime = mach_absolute_time()
         heard = [:]
+        mutedSpans = isMicMuted ? [MutedSpan(startMs: 0)] : []
         audioFile.set(nil)
         let pipeline = TranscriptionPipeline(
             transcriber: transcriber,
@@ -249,6 +262,10 @@ final class Recorder {
     private func receive(_ fragment: LiveTranscriber.Fragment, from source: AudioSource) {
         if liveFragments[source] == nil { liveLog.notice("first live text from \(source.rawValue, privacy: .public)") }
         heard[source]?.add(fragment)
+        // Silence comes back as a lone "." now and then (a muted mic, a quiet room): not words.
+        guard fragment.text.contains(where: { $0.isLetter || $0.isNumber }) else { return }
+        // Muted: nothing from the mic shows.
+        if source == .mic, isMicMuted { return }
         guard showsLiveText else { return }
         var f = liveFragments[source] ?? ([], nil)
         if fragment.isFinal {
@@ -575,6 +592,7 @@ final class Recorder {
     /// results lag a little and are only timed closely once finished, so a line it hasn't clearly
     /// heard gets one more look shortly after (unless it has stopped listening).
     private func insert(_ line: TranscriptLine, waited: Bool = false) {
+        if line.source == .mic, mutedSpans.contains(where: { $0.contains((line.startMs + line.endMs) / 2) }) { return }
         if let heard = heard[line.source] {
             let final = waited || heard.until != nil
             switch heard.verdict(on: line) {
@@ -654,6 +672,14 @@ private final class DeliveryCount: Sendable {
 }
 
 /// The audio file being written, swapped in from the main actor and fed from capture threads.
+/// A stretch with the mic muted, in meeting milliseconds (no end: still muted).
+struct MutedSpan {
+    let startMs: Int
+    var endMs: Int?
+
+    func contains(_ ms: Int) -> Bool { ms >= startMs && endMs.map { ms < $0 } ?? true }
+}
+
 /// A switch read from capture threads.
 private final class Flag: Sendable {
     private let value = Mutex(false)

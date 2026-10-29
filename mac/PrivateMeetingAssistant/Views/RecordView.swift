@@ -944,7 +944,7 @@ private struct LiveRecordingView: View {
 
     /// Sources with words being spoken right now, mic first.
     private var liveSources: [AudioSource] {
-        AudioSource.allCases.filter { recorder.liveText[$0]?.isEmpty == false }
+        AudioSource.allCases.filter { recorder.liveText[$0]?.isEmpty == false && !($0 == .mic && recorder.isMicMuted) }
     }
 
     /// Who the live text is from, as far as is known before Whisper and the speaker model have run.
