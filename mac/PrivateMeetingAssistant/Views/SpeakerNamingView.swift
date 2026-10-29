@@ -19,9 +19,8 @@ struct SpeakerNamingView: View {
         VStack(alignment: .leading, spacing: 0) {
             ModalHeader(
                 title: "Who spoke?",
-                subtitle: "These voices were told apart in the recording. Name them to use the names in the transcript and summary.",
-                closeHelp: "Skip naming (Esc)"
-            ) { finish(saving: false) }
+                subtitle: "These voices were told apart in the recording. Name them to use the names in the transcript and summary."
+            )
             .padding(20)
             Divider()
             ScrollView {
@@ -41,6 +40,7 @@ struct SpeakerNamingView: View {
         }
         .frame(width: 620, height: min(CGFloat(220 + speakers.count * 112), 640))
         .background(Theme.canvas)
+        .modalCloseButton(help: "Skip naming (Esc)") { finish(saving: false) }
         .task { load() }
         .onDisappear { player.stop() }
     }

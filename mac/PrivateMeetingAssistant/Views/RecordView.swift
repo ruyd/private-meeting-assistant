@@ -1163,7 +1163,7 @@ private struct CaptureWindowPicker: View {
             ModalHeader(
                 title: "Which \(appName) window?",
                 subtitle: "Screenshots and videos use it for the rest of this recording, while it's open."
-            ) { choose(nil) }
+            )
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
                     ForEach(choices) { choice in
@@ -1193,6 +1193,7 @@ private struct CaptureWindowPicker: View {
         }
         .padding(24)
         .frame(width: 560)
+        .modalCloseButton { choose(nil) }
     }
 }
 
