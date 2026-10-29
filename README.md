@@ -57,7 +57,7 @@ On first launch, a short setup walks through where meetings are saved, the micro
 
 | | Options | Default |
 |---|---|---|
-| Speech (whisper.cpp) | Base (English) 148 MB, Small (English) 488 MB, Large v3 Turbo 574 MB | Large v3 Turbo |
+| Speech (whisper.cpp) | Base (English) 148 MB, Small (English) 488 MB, Large (Multi-language, Whisper large-v3-turbo) 574 MB | Large (Multi-language) |
 | Summaries (Ollama) | Any local model in your Ollama, or one downloaded into the app's own | Gemma 4 12B with 24 GB of memory or more, Gemma 3 4B otherwise |
 | Speakers | WeSpeaker ResNet34 (Core ML) 8 MB | Downloaded when "Tell speakers apart" is on |
 | Voice activity | Silero VAD v6 (Core ML) 0.9 MB | Ships with the app |

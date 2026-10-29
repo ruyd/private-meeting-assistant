@@ -15,7 +15,7 @@ struct SpeechModel: Identifiable, Hashable, Sendable {
         SpeechModel(id: "base.en", name: "Base (English)", detail: "Fastest; fine for clear audio.", megabytes: 148),
         SpeechModel(id: "small.en", name: "Small (English)", detail: "Good balance of speed and accuracy.", megabytes: 488),
         SpeechModel(
-            id: "large-v3-turbo-q5_0", name: "Large v3 Turbo",
+            id: "large-v3-turbo-q5_0", name: "Large (Multi-language)",
             detail: "Most accurate, any language. Best for accents, crosstalk and jargon.", megabytes: 574
         ),
     ]
