@@ -21,7 +21,7 @@ Everything else was checked in the sandboxed build: microphone and system-audio 
 
 ## One-time setup in App Store Connect
 
-The app is registered: [App Store Connect app 6828188643](https://appstoreconnect.apple.com/apps/6828188643), bundle ID `dev.ruy.private-meeting-assistant`. Steps 1–3 are done; 4–8 remain before submitting for review (TestFlight only needs the uploaded build).
+The app is registered: [App Store Connect app 6828188643](https://appstoreconnect.apple.com/apps/6828188643), bundle ID `dev.ruy.private-meeting-assistant`. Steps 1–3 are done; 4–8 remain before submitting for review (TestFlight only needs the uploaded build). The text for each, ready to paste, is in [`APPSTORE-LISTING.md`](APPSTORE-LISTING.md); the privacy policy is [`PRIVACY.md`](../PRIVACY.md).
 
 1. **Agreements, Tax, and Banking**: accept the Paid Applications agreement and add bank and tax details. A paid app can't go on sale without them.
 2. **Register the bundle ID** first; App Store Connect only lists registered ones. In Certificates, Identifiers & Profiles › Identifiers › **+**: App IDs › App, description "Private Meeting Assistant", **Explicit** bundle ID `dev.ruy.private-meeting-assistant`, platform macOS. Leave every capability unchecked: the sandbox, microphone, network and file access come from `AppStore.entitlements`, and Apple Intelligence, Screen Recording, system audio and the Keychain need none. (A wildcard ID would rule out capabilities such as In-App Purchase or iCloud later, and the bundle ID can't change once the app ships.)

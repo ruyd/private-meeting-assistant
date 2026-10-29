@@ -9,6 +9,25 @@ a successful release they add the build to **Published builds** and tag the comm
 
 ## Unreleased
 
+Nothing yet.
+
+## 1.0.0 — 2026-10-29
+
+First public release, on the Mac App Store and as a notarized download.
+
+- Live transcription on the Mac with whisper.cpp (Metal): Base (English), Small (English) or Large (Multi-language). Words show as they're spoken, then Whisper's more accurate line replaces them.
+- Records your microphone and the call's audio (one app, all system audio, or the microphone only for in-person meetings). No bot joins the meeting. A mute button keeps you out of the transcript and the recording.
+- Only speech is transcribed: a voice activity model keeps silence, fans and keyboard clicks from turning into invented lines.
+- Echo removal without headphones, a filter for rumble below voices, and noise suppression, in the transcript and the saved audio.
+- Tells speakers apart (Participant 1, 2…) with an on-device speaker model; name them when the recording stops, from a voice clip, a quote and the calendar's invitees.
+- Summaries, decisions and action items, written on the Mac by Apple Intelligence or your own Ollama (the notarized download can also fetch its own Ollama); each says which engine wrote it.
+- Save the meeting's audio (48 kHz stereo), record the meeting app's window as video (with or without your voice, full or cut to the video), and take screenshots, all placed in the transcript; type notes alongside.
+- Sign in with Google, Microsoft 365 or Zoom to pick upcoming meetings, name recordings and keep the invitees.
+- Meetings are folders of Markdown files you own, with full-text search across transcripts, summaries, notes and participants.
+- An audio player that follows the transcript (with a volume up to 200%), adjustable text size, and copy buttons for transcripts and summaries.
+
+### Since the first TestFlight build (202610281803)
+
 - The meeting page's transcript is one block of text: select and copy across any number of lines.
 - Playing a meeting's audio highlights the line being played and keeps it in view; click a line's time to play from there.
 - Transcript text size: A− / A+ in the toolbar (⌘− / ⌘=), on the meeting page and while recording.
@@ -35,20 +54,6 @@ a successful release they add the build to **Published builds** and tag the comm
 - Videos show as a still with a play button in the transcript (and in the meetings list when there's no screenshot), instead of a small link.
 - Videos no longer echo: they used to record the raw microphone, which also hears the call from the speakers. Record video now records the app's sound only; Record video + mic (the button's menu) mixes in your voice from the echo-removed microphone when the video stops.
 - Saved audio no longer crackles: small gaps and overlaps between captured chunks (2–9 ms dropouts) are gone.
-
-## 1.0.0 — 2026-10-28
-
-First public release, on the Mac App Store and as a notarized download.
-
-- Live transcription on the Mac with whisper.cpp (Metal): Base, Small or Large v3 Turbo.
-- Records your microphone and the call's audio (one app, all system audio, or the microphone only for in-person meetings). No bot joins the meeting.
-- Echo removal without headphones, in the transcript and in the saved audio.
-- Tells speakers apart (Participant 1, 2…) with an on-device speaker model; name them when the recording stops, from a voice clip, a quote and the calendar's invitees.
-- Summaries, decisions and action items, written on the Mac by Apple Intelligence or your own Ollama (the notarized download can also fetch its own Ollama).
-- Save the meeting's audio, record the meeting app's window as video, and take screenshots, all placed in the transcript.
-- Sign in with Google, Microsoft 365 or Zoom to pick upcoming meetings, name recordings and keep the invitees.
-- Meetings are folders of Markdown files you own, with full-text search across transcripts, summaries and participants.
-- Inline audio player and copy buttons for transcripts and summaries.
 
 ## Published builds
 
