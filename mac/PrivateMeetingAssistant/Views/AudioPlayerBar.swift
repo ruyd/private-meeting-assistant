@@ -57,7 +57,7 @@ struct AudioPlayerBar: View {
 }
 
 /// Plays one file, publishing its position for the slider. Through AVAudioEngine rather than
-/// AVAudioPlayer, whose volume stops at 100%: the volume (`volume`, 0–1.5) is a gain, so quiet
+/// AVAudioPlayer, whose volume stops at 100%: the volume (`volume`, 0–2) is a gain, so quiet
 /// recordings can be turned up.
 @MainActor @Observable
 final class InlineAudioPlayer {
@@ -66,7 +66,7 @@ final class InlineAudioPlayer {
     private(set) var currentTime: TimeInterval = 0
     /// While the slider is dragged, the position follows the slider, not playback.
     var isScrubbing = false
-    /// 1 is the recording as it is; up to 1.5 (+3.5 dB).
+    /// 1 is the recording as it is; up to 2 (+6 dB).
     var volume: Float = 1 {
         didSet { applyVolume() }
     }
@@ -172,7 +172,7 @@ final class InlineAudioPlayer {
 
     /// Up to 100% by the mixer's volume (down to silence); above it, by the gain stage.
     private func applyVolume() {
-        let v = max(min(volume, 1.5), 0)
+        let v = max(min(volume, 2), 0)
         engine.mainMixerNode.outputVolume = min(v, 1)
         gain.globalGain = v > 1 ? 20 * log10(v) : 0
     }
@@ -192,17 +192,17 @@ final class InlineAudioPlayer {
     }
 }
 
-/// Playback volume from 0 to 150%, with 100% in the middle (marked |): the left half goes to 100%,
-/// the right half on to 150%. Snaps to 100% close by.
+/// Playback volume from 0 to 200%, with 100% in the middle (marked |): the left half goes to 100%,
+/// the right half on to 200%. Snaps to 100% close by.
 struct VolumeSlider: View {
     @Binding var volume: Double
 
-    static let range = 0.0...1.5
+    static let range = 0.0...2.0
 
     /// The slider's position (0…1) for a volume, and back.
-    static func position(_ volume: Double) -> Double { volume <= 1 ? volume / 2 : 0.5 + (volume - 1) }
+    static func position(_ volume: Double) -> Double { volume <= 1 ? volume / 2 : 0.5 + (volume - 1) / 2 }
     static func volume(_ position: Double) -> Double {
-        let v = position <= 0.5 ? position * 2 : 1 + (position - 0.5)
+        let v = position <= 0.5 ? position * 2 : 1 + (position - 0.5) * 2
         return abs(v - 1) < 0.03 ? 1 : min(max(v, range.lowerBound), range.upperBound)
     }
 
@@ -226,6 +226,6 @@ struct VolumeSlider: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 34, alignment: .leading)
         }
-        .help("Volume: 100% is the recording as it is; up to 150% to turn quiet ones up")
+        .help("Volume: 100% is the recording as it is; up to 200% to turn quiet ones up")
     }
 }
