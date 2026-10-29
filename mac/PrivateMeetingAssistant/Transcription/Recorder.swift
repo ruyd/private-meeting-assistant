@@ -320,6 +320,10 @@ final class Recorder {
             fileWrite?.cancel()
             let hasSpeakers = saveSpeakers(pipeline.speakerResult(), meetingID: meetingID)
             library.writeFiles(meetingID)
+            // Renamed while recording: now that nothing is being written, the folder follows the title.
+            if let title = (try? library.store?.meeting(meetingID))?.title {
+                library.rename(meetingID, to: title)
+            }
             let summarize = !lines.isEmpty && UserDefaults.standard.object(forKey: MeetingLibrary.autoSummarizeKey) as? Bool ?? true
             if hasSpeakers {
                 // Names first, so the summary can use them; naming (or skipping it) starts the summary.

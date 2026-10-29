@@ -5,7 +5,8 @@ import SwiftUI
 /// anywhere in the recording. Its times are the transcript's, since the file follows the meeting.
 struct AudioPlayerBar: View {
     let url: URL
-    @State private var player = InlineAudioPlayer()
+    /// Owned by the page, so the transcript can follow it.
+    let player: InlineAudioPlayer
 
     var body: some View {
         HStack(spacing: 10) {
@@ -83,6 +84,12 @@ final class InlineAudioPlayer: NSObject, AVAudioPlayerDelegate {
     func seek(to time: TimeInterval) {
         currentTime = min(max(time, 0), duration)
         player?.currentTime = currentTime
+    }
+
+    /// Plays from a point in the recording (clicking a line's time).
+    func play(from time: TimeInterval) {
+        seek(to: time)
+        if player?.isPlaying != true { toggle() }
     }
 
     func stop() {

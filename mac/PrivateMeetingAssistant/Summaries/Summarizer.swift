@@ -65,7 +65,9 @@ struct Summarizer {
 
     /// `participants` (from the linked calendar) lets the model name who "Them" might be and give
     /// action items real owners.
-    func summarize(_ segments: [Segment], participants: [MeetingParticipant] = []) async throws -> MeetingSummary {
+    /// `notes` are what the recorder typed during or after the meeting: extra context, and often the
+    /// points they cared about most.
+    func summarize(_ segments: [Segment], participants: [MeetingParticipant] = [], notes: String = "") async throws -> MeetingSummary {
         let speakerNote = (segments.contains { $0.participant != nil } ? Self.voicesNote : Self.speakerNote)
             + Self.participantsNote(participants)
         let transcript = Self.transcriptText(segments)
@@ -85,6 +87,11 @@ struct Summarizer {
                 notes = try await takeNotes(groups, of: "notes on a meeting", speakerNote: speakerNote)
             }
             material = "Notes from consecutive parts of the meeting:\n\n" + notes.joined(separator: "\n\n---\n\n")
+        }
+        let typed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty {
+            // Kept short so it never crowds out the meeting itself in a small context window.
+            material += "\n\nNotes \"Me\" typed during the meeting (use them to weigh what mattered; don't repeat them verbatim):\n\(typed.prefix(2_000))"
         }
 
         if case .apple = backend {

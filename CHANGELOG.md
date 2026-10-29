@@ -9,6 +9,11 @@ a successful release they add the build to **Published builds** and tag the comm
 
 ## Unreleased
 
+- The meeting page's transcript is one block of text: select and copy across any number of lines.
+- Playing a meeting's audio highlights the line being played and keeps it in view; click a line's time to play from there.
+- Transcript text size: A− / A+ in the toolbar (⌘− / ⌘=), on the meeting page and while recording.
+- Rename a meeting while recording (its folder follows when the recording stops), and a clearer rename button on the meeting page.
+- Notes: type them while recording or afterwards; they're saved in notes.md, searchable, and used for the summary.
 - Live transcript: words appear as they're spoken (about half a second, with Apple's on-device recognizer), then Whisper's more accurate line replaces them a few seconds later. The Live / Delayed switch in the recording view turns it off.
 - Saved audio no longer crackles: small gaps and overlaps between captured chunks (2–9 ms dropouts) are gone.
 

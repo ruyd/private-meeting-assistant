@@ -4,7 +4,8 @@ Known gaps and ideas for the Swift app, roughly in priority order. Remove items 
 
 ## Transcript
 
-- **Select across transcript lines.** Copy Transcript (Record and meeting pages) and Markdown export cover copying, but a drag-selection still can't span lines: each line is its own text view. A single selectable text block (or an `NSTextView`) would fix it, at some cost for very long meetings.
+- **Select across lines while recording.** The meeting page's transcript is one text view (select and copy across lines), but the live view keeps the design's conversation layout, one view per line; Copy Transcript covers it meanwhile. A text view with the avatars drawn in the margin would bring both together.
+- **Play from any word.** Clicking a line's time plays from there; clicking inside a line could too, but would clash with selecting text. Whisper's word timings would allow highlighting the word being played, not just the line.
 - **Filter Whisper's invented lines on near-silence**, e.g. "Thank you." at the end of a recording. Use the segment's confidence (average log probability, compression ratio) rather than blocking phrases people really say.
 - **Vocabulary hints.** Pass names and jargon (from the meeting title or calendar) to Whisper as a prompt so they're spelled right.
 
@@ -21,6 +22,7 @@ Known gaps and ideas for the Swift app, roughly in priority order. Remove items 
 
 ## Data
 
+- **Read notes.md back.** Notes typed in the app are saved to notes.md and the index; edits made to notes.md in another app aren't read back yet (the same gap as transcripts and summaries, below).
 - **Rebuild the index from the meeting folders.** Each meeting is a folder of Markdown files; the database is only the index for the list and search. After reinstalling (or moving folders around), scan the meetings folder and re-index `transcript.md` and `summary.md`. The same would pick up edits made to those files outside the app, which are currently not read back.
 - **Screenshots and video in the meeting folder.** The folder layout is ready for them; the capture features don't exist yet.
 

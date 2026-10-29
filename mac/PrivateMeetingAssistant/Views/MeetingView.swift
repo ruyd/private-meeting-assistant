@@ -16,6 +16,9 @@ struct MeetingView: View {
     @State private var title = ""
     @State private var confirmDelete = false
     @State private var error: String?
+    @State private var player = InlineAudioPlayer()
+    @AppStorage(TranscriptFont.key) private var fontSize = TranscriptFont.standard
+    @FocusState private var editingTitle: Bool
 
     var body: some View {
         Group {
@@ -28,6 +31,7 @@ struct MeetingView: View {
         .navigationTitle(meeting?.title ?? "Meeting")
         .toolbar {
             ToolbarItemGroup {
+                TranscriptFontButtons()
                 Button("Copy Transcript", systemImage: "doc.on.doc") {
                     copy(TranscriptExport.plainText(segments.map { ($0.speaker, $0.startMs, $0.text) }))
                 }
@@ -64,18 +68,28 @@ struct MeetingView: View {
     }
 
     private func content(_ meeting: Meeting) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView {
+        ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    TextField("Title", text: $title)
-                        .textFieldStyle(.plain)
-                        .font(.title2.bold())
-                        .onSubmit { rename() }
+                    HStack(spacing: 8) {
+                        TextField("Title", text: $title)
+                            .textFieldStyle(.plain)
+                            .font(.title2.bold())
+                            .focused($editingTitle)
+                            .onSubmit { rename() }
+                            .onChange(of: editingTitle) { if !editingTitle { rename() } }
+                            .fixedSize()
+                        Button("Rename", systemImage: "pencil") { editingTitle = true }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.secondary)
+                            .opacity(editingTitle ? 0 : 1)
+                            .help("Rename the meeting (its folder is renamed too)")
+                    }
                     HStack(spacing: 12) {
                         Text("\(meeting.startedAt.formatted(date: .complete, time: .shortened)) · \(TranscriptExport.timestamp(meeting.durationMs))")
                             .foregroundStyle(.secondary)
                         if let audio {
-                            AudioPlayerBar(url: audio)
+                            AudioPlayerBar(url: audio, player: player)
                         }
                     }
                     if !speakers.isEmpty {
@@ -121,47 +135,28 @@ struct MeetingView: View {
                     if segments.isEmpty {
                         Text("Nothing was transcribed.").foregroundStyle(.secondary)
                     }
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(segments) { segment in
-                            ForEach(screenshots(before: segment)) { ScreenshotRow(shot: $0, leadingInset: 62) }
-                            ForEach(media(videos, before: segment)) { VideoRow(video: $0, leadingInset: 62) }
-                            TranscriptRow(
-                                segment: segment, speakerWidth: speakerWidth,
-                                isFocused: segment.id == route.focusSegmentID
-                            )
-                            .id(segment.id)
+                    TranscriptTextView(
+                        segments: segments, screenshots: screenshots, videos: videos, fontSize: fontSize,
+                        playing: playingSegment, follow: player.isPlaying, focused: route.focusSegmentID,
+                        seek: { ms in
+                            if audio != nil { player.play(from: Double(ms) / 1000) }
                         }
-                        ForEach(screenshots.filter { $0.atMs > (segments.last?.startMs ?? -1) }) {
-                            ScreenshotRow(shot: $0, leadingInset: 62)
-                        }
-                        ForEach(videos.filter { $0.atMs > (segments.last?.startMs ?? -1) }) {
-                            VideoRow(video: $0, leadingInset: 62)
-                        }
-                    }
+                    )
+                    Text("Notes").font(.headline).padding(.top, 8)
+                    NotesEditor(meetingID: meeting.id, initial: meeting.notes)
                 }
                 .padding()
                 .frame(maxWidth: 820, alignment: .leading)
                 .frame(maxWidth: .infinity)
-            }
-            .onAppear {
-                if let focus = route.focusSegmentID {
-                    DispatchQueue.main.async { proxy.scrollTo(focus, anchor: .center) }
-                }
-            }
         }
         .onDisappear { rename() }
     }
 
-    private var speakerWidth: CGFloat { segments.contains { $0.participant != nil } ? 110 : 44 }
-
-    /// Screenshots taken after the previous line started and up to this one.
-    private func screenshots(before segment: Segment) -> [MeetingScreenshot] { media(screenshots, before: segment) }
-
-    /// Screenshots or videos from after the previous line started and up to this one.
-    private func media(_ items: [MeetingScreenshot], before segment: Segment) -> [MeetingScreenshot] {
-        guard let index = segments.firstIndex(of: segment) else { return [] }
-        let after = index == 0 ? -1 : segments[index - 1].startMs
-        return items.filter { $0.atMs > after && $0.atMs <= segment.startMs }
+    /// The line the audio is at: the last one starting at or before it, once it's been played.
+    private var playingSegment: Int64? {
+        guard audio != nil, player.isPlaying || player.currentTime > 0 else { return nil }
+        let ms = Int(player.currentTime * 1000)
+        return segments.last { $0.startMs <= ms }?.id
     }
 
     private func load() {

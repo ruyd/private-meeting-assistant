@@ -9,6 +9,7 @@ enum MeetingFiles {
     static let rootKey = "meetingsFolder"
     static let transcriptFile = "transcript.md"
     static let summaryFile = "summary.md"
+    static let notesFile = "notes.md"
     static let screenshotsFolder = "screenshots"
     static let voicesFolder = "voices"
     static let audioFile = "audio.m4a"
@@ -101,6 +102,13 @@ enum MeetingFiles {
         let hasAudio = FileManager.default.fileExists(atPath: folder.appending(path: audioFile).path)
         try transcriptMarkdown(meeting, segments, screenshots: screenshots(in: folder), videos: videos(in: folder), hasAudio: hasAudio)
             .write(to: folder.appending(path: transcriptFile), atomically: true, encoding: .utf8)
+        let notesURL = folder.appending(path: notesFile)
+        let notes = meeting.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !notes.isEmpty {
+            try "# \(meeting.title): notes\n\n\(notes)\n".write(to: notesURL, atomically: true, encoding: .utf8)
+        } else if FileManager.default.fileExists(atPath: notesURL.path) {
+            try FileManager.default.removeItem(at: notesURL)
+        }
         let summaryURL = folder.appending(path: summaryFile)
         if let summary = meeting.summary {
             try summaryMarkdown(meeting, summary).write(to: summaryURL, atomically: true, encoding: .utf8)

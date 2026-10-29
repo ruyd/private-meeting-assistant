@@ -57,16 +57,30 @@ final class MeetingLibrary {
         }
     }
 
-    func rename(_ id: Int64, to title: String) {
+    /// Renames the meeting and its folder. `moveFolder: false` renames only the title, for a meeting
+    /// being recorded, whose files are still being written; the folder follows when it stops.
+    func rename(_ id: Int64, to title: String, moveFolder: Bool = true) {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, let store else { return }
         do {
             try store.renameMeeting(id, to: title)
-            if let meeting = try store.meeting(id), FileManager.default.fileExists(atPath: meeting.folder.path) {
+            if moveFolder, let meeting = try store.meeting(id), FileManager.default.fileExists(atPath: meeting.folder.path) {
                 try store.setFolder(id, MeetingFiles.renameFolder(meeting.folder, title: title, startedAt: meeting.startedAt))
             }
         } catch {
             self.error = "Couldn't rename: \(error.localizedDescription)"
+        }
+        writeFiles(id)
+        refresh()
+    }
+
+    /// Saves notes typed for the meeting: in the index (for search) and in notes.md.
+    func saveNotes(_ id: Int64, _ notes: String) {
+        guard let store else { return }
+        do {
+            try store.saveNotes(id, notes)
+        } catch {
+            self.error = "Couldn't save the notes: \(error.localizedDescription)"
         }
         writeFiles(id)
         refresh()
@@ -138,7 +152,8 @@ final class MeetingLibrary {
             let choice = SummaryEngine.Choice(rawValue: UserDefaults.standard.string(forKey: Self.summaryEngineKey) ?? "") ?? .automatic
             let backend = try await SummaryEngine.shared.backend(choice: choice, model: model)
             let summary = try await Summarizer(backend: backend).summarize(
-                store.segments(of: id), participants: store.meeting(id)?.details?.participants ?? []
+                store.segments(of: id), participants: store.meeting(id)?.details?.participants ?? [],
+                notes: store.meeting(id)?.notes ?? ""
             )
             try store.saveSummary(id, summary)
             writeFiles(id)

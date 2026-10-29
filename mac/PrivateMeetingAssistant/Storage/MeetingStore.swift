@@ -16,6 +16,8 @@ struct Meeting: Identifiable, Hashable, Sendable {
     /// Subject, schedule and participants from the linked calendar or Zoom, if the recording was
     /// started from one.
     var details: MeetingDetails? = nil
+    /// Notes typed during or after the meeting (also in notes.md).
+    var notes: String = ""
 }
 
 struct Segment: Identifiable, Hashable, Sendable {
@@ -109,7 +111,7 @@ final class MeetingStore: Sendable {
             )
             let id = db.lastInsertedRowID
             try db.execute(
-                sql: "INSERT INTO meetings_fts (meeting_id, title, summary, participants) VALUES (?, ?, '', ?)",
+                sql: "INSERT INTO meetings_fts (meeting_id, title, summary, participants, notes) VALUES (?, ?, '', ?, '')",
                 arguments: [id, title, Self.searchableParticipants(details)]
             )
             return id
@@ -161,6 +163,14 @@ final class MeetingStore: Sendable {
         try db.write { db in
             try db.execute(sql: "UPDATE meetings SET summary_json = ?, summary_status = 'done' WHERE id = ?", arguments: [json, id])
             try db.execute(sql: "UPDATE meetings_fts SET summary = ? WHERE meeting_id = ?", arguments: [summary.searchableText, id])
+        }
+    }
+
+    /// Saves the meeting's notes and indexes them for search.
+    func saveNotes(_ id: Int64, _ notes: String) throws {
+        try db.write { db in
+            try db.execute(sql: "UPDATE meetings SET notes = ? WHERE id = ?", arguments: [notes, id])
+            try db.execute(sql: "UPDATE meetings_fts SET notes = ? WHERE meeting_id = ?", arguments: [notes, id])
         }
     }
 
@@ -341,7 +351,7 @@ final class MeetingStore: Sendable {
         m.id, m.title, m.started_at, m.ended_at, m.summary_json, m.summary_status,
         (SELECT COUNT(*) FROM segments s WHERE s.meeting_id = m.id),
         COALESCE((SELECT MAX(end_ms) FROM segments s WHERE s.meeting_id = m.id), 0),
-        m.folder, m.details_json
+        m.folder, m.details_json, COALESCE(m.notes, '')
         """
 
     private static func meeting(_ row: Row) -> Meeting {
@@ -351,7 +361,8 @@ final class MeetingStore: Sendable {
             summary: json.flatMap { try? JSONDecoder().decode(MeetingSummary.self, from: Data($0.utf8)) },
             summaryStatus: row[5], segmentCount: row[6], durationMs: row[7],
             folder: URL(fileURLWithPath: row[8], isDirectory: true),
-            details: (row[9] as String?).flatMap { try? JSONDecoder().decode(MeetingDetails.self, from: Data($0.utf8)) }
+            details: (row[9] as String?).flatMap { try? JSONDecoder().decode(MeetingDetails.self, from: Data($0.utf8)) },
+            notes: row[10]
         )
     }
 
@@ -370,15 +381,22 @@ final class MeetingStore: Sendable {
         if try !db.columns(in: "meetings").contains(where: { $0.name == "details_json" }) {
             try db.execute(sql: "ALTER TABLE meetings ADD COLUMN details_json TEXT")
         }
-        // FTS5 tables can't gain columns; rebuild the title and summary index with participants.
-        if try !db.columns(in: "meetings_fts").contains(where: { $0.name == "participants" }) {
-            let rows = try Row.fetchAll(db, sql: "SELECT meeting_id, title, summary FROM meetings_fts")
+        if try !db.columns(in: "meetings").contains(where: { $0.name == "notes" }) {
+            try db.execute(sql: "ALTER TABLE meetings ADD COLUMN notes TEXT")
+        }
+        // FTS5 tables can't gain columns: rebuild the title, summary, participants and notes index
+        // from the meetings when it lacks one.
+        let ftsColumns = try db.columns(in: "meetings_fts").map(\.name)
+        if !["participants", "notes"].allSatisfy(ftsColumns.contains) {
             try db.execute(sql: "DROP TABLE meetings_fts")
             try db.execute(sql: Self.meetingsFTS)
-            for row in rows {
+            for row in try Row.fetchAll(db, sql: "SELECT id, title, summary_json, details_json, COALESCE(notes, '') FROM meetings") {
+                let summary = (row[2] as String?).flatMap { try? JSONDecoder().decode(MeetingSummary.self, from: Data($0.utf8)) }
+                let details = (row[3] as String?).flatMap { try? JSONDecoder().decode(MeetingDetails.self, from: Data($0.utf8)) }
                 try db.execute(
-                    sql: "INSERT INTO meetings_fts (meeting_id, title, summary, participants) VALUES (?, ?, ?, '')",
-                    arguments: [row[0] as DatabaseValue, row[1] as DatabaseValue, row[2] as DatabaseValue]
+                    sql: "INSERT INTO meetings_fts (meeting_id, title, summary, participants, notes) VALUES (?, ?, ?, ?, ?)",
+                    arguments: [row[0] as DatabaseValue, row[1] as DatabaseValue, summary?.searchableText ?? "",
+                                Self.searchableParticipants(details), row[4] as DatabaseValue]
                 )
             }
         }
@@ -386,7 +404,7 @@ final class MeetingStore: Sendable {
 
     private static let meetingsFTS = """
         CREATE VIRTUAL TABLE IF NOT EXISTS meetings_fts USING fts5(
-            meeting_id UNINDEXED, title, summary, participants, tokenize='porter unicode61'
+            meeting_id UNINDEXED, title, summary, participants, notes, tokenize='porter unicode61'
         );
         """
 
@@ -399,7 +417,8 @@ final class MeetingStore: Sendable {
             folder         TEXT    NOT NULL,
             summary_json   TEXT,
             summary_status TEXT    NOT NULL DEFAULT 'none',
-            details_json   TEXT
+            details_json   TEXT,
+            notes          TEXT
         );
 
         CREATE TABLE IF NOT EXISTS segments (
@@ -437,5 +456,5 @@ final class MeetingStore: Sendable {
             INSERT INTO segments_fts(segments_fts, rowid, text) VALUES ('delete', old.id, old.text);
         END;
 
-        """ + "\n-- Title, summary and participants per meeting, maintained by MeetingStore.\n" + meetingsFTS
+        """ + "\n-- Title, summary, participants and notes per meeting, maintained by MeetingStore.\n" + meetingsFTS
 }

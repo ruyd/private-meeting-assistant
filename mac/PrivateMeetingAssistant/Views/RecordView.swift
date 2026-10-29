@@ -697,6 +697,9 @@ private struct LiveRecordingView: View {
     @Environment(MeetingLibrary.self) private var library
     @State private var appIcon: NSImage?
     @State private var micName: String?
+    /// The meeting's name as typed in the header; renamed on Return or when leaving the field.
+    @State private var titleDraft = ""
+    @FocusState private var editingTitle: Bool
 
     private var session: CaptureSession { recorder.capture }
 
@@ -745,6 +748,13 @@ private struct LiveRecordingView: View {
                 .padding(.vertical, 16)
             Divider()
             transcript
+            if let id = recorder.meetingID {
+                NotesEditor(meetingID: id, initial: "", minHeight: 58)
+                    .frame(maxHeight: 120)
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 12)
+                    .id(id)
+            }
             Divider()
             actions
                 .padding(.horizontal, 28)
@@ -752,7 +762,8 @@ private struct LiveRecordingView: View {
         }
         .navigationTitle(title)
         .toolbar {
-            ToolbarItem {
+            ToolbarItemGroup {
+                TranscriptFontButtons()
                 Button("Copy Transcript", systemImage: "doc.on.doc") {
                     copy(TranscriptExport.plainText(recorder.lines.map { ($0.speaker, $0.startMs, $0.text) }))
                 }
@@ -786,7 +797,15 @@ private struct LiveRecordingView: View {
                 .frame(height: 30)
                 .background(.red.opacity(0.15), in: .capsule)
 
-                Text(title).font(.title2.weight(.semibold)).lineLimit(1)
+                // Renaming while recording changes the title; the folder follows when the recording stops.
+                TextField("Meeting name", text: $titleDraft)
+                    .textFieldStyle(.plain)
+                    .font(.title2.weight(.semibold))
+                    .focused($editingTitle)
+                    .onSubmit { renameMeeting() }
+                    .onChange(of: editingTitle) { if !editingTitle { renameMeeting() } }
+                    .onChange(of: title, initial: true) { if !editingTitle { titleDraft = title } }
+                    .help("Rename the meeting")
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
                     MeterRow(label: "Me", level: session.levels[.mic] ?? 0)
@@ -893,6 +912,15 @@ private struct LiveRecordingView: View {
         return recorder.identifiesSpeakers
             ? "\(timing), each voice as its own participant."
             : "\(timing): you as “Me”, the other participants as “Them”."
+    }
+
+    private func renameMeeting() {
+        let name = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let id = recorder.meetingID, !name.isEmpty, name != title else {
+            titleDraft = title
+            return
+        }
+        library.rename(id, to: name, moveFolder: false)
     }
 
     /// Sources with words being spoken right now, mic first.
@@ -1082,6 +1110,7 @@ enum SpeakerStyle {
 
 /// A transcript line as a conversation: the speaker's initial, name and time, then the text.
 struct SpeakerRow: View {
+    @AppStorage(TranscriptFont.key) private var fontSize = TranscriptFont.standard
     let speaker: String
     let source: AudioSource
     var participant: Int?
@@ -1101,7 +1130,7 @@ struct SpeakerRow: View {
                     Text(TranscriptExport.timestamp(startMs)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
                 Text(text)
-                    .font(.title3)
+                    .font(.system(size: fontSize + 2))
                     .lineSpacing(3)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1113,6 +1142,7 @@ struct SpeakerRow: View {
 /// Words being spoken right now, before Whisper's final line replaces them: grey text, a "Live" tag
 /// and a cursor, as in the recording design.
 private struct LiveTextRow: View {
+    @AppStorage(TranscriptFont.key) private var fontSize = TranscriptFont.standard
     let speaker: String
     let source: AudioSource
     let text: String
@@ -1131,7 +1161,7 @@ private struct LiveTextRow: View {
                     Text("Live").font(.caption.weight(.semibold)).foregroundStyle(.orange)
                 }
                 (Text(text) + Text(" ▍").foregroundStyle(.orange))
-                    .font(.title3)
+                    .font(.system(size: fontSize + 2))
                     .foregroundStyle(.secondary)
                     .lineSpacing(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1213,36 +1243,6 @@ struct VideoRow: View {
         .disabled(isRecording)
         .padding(.leading, leadingInset)
         .help(isRecording ? "Recording; it opens once you stop the video" : "Open the video")
-    }
-}
-
-/// One transcript line: time, speaker and text.
-struct TranscriptRow: View {
-    let segment: Segment
-    /// Room for the speaker column: wider when the meeting has named or numbered participants, so
-    /// all rows line up.
-    var speakerWidth: CGFloat = 44
-    var isFocused = false
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(TranscriptExport.timestamp(segment.startMs))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 52, alignment: .trailing)
-            Text(segment.speaker)
-                .font(.callout.bold())
-                .foregroundStyle(SpeakerStyle.color(segment.source, participant: segment.participant))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(width: speakerWidth, alignment: .leading)
-                .help(segment.speaker)
-            Text(segment.text)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, isFocused ? 4 : 0)
-        .background(isFocused ? Color.yellow.opacity(0.25) : .clear, in: .rect(cornerRadius: 4))
     }
 }
 
