@@ -74,7 +74,7 @@ xcodebuild -project PrivateMeetingAssistant.xcodeproj -scheme PrivateMeetingAssi
 
 Unit tests cover capture helpers, voice detection, echo removal, storage and search, and summary parsing. The transcription tests run the real model once one is downloaded.
 
-To build, launch and screenshot the Debug app from the command line (with made-up meetings), use `mac/scripts/run-app.sh`; Claude Code picks it up through the `run-app` skill in `.claude/skills/`. In the Claude desktop app, the preview's Run button (`.claude/launch.json`) builds and launches it and mirrors its windows in the preview pane.
+To build, launch and screenshot the Debug app from the command line, use `mac/scripts/run-app.sh`; Claude Code picks it up through the `run-app` skill in `.claude/skills/`. In the Claude desktop app, the preview's Run button (`.claude/launch.json`) builds and launches it and mirrors its windows in the preview pane.
 
 Debug builds also accept command-line self-tests: `--capture-test`, `--transcribe-test`, `--prepare-model` and `--install-ollama` (see `mac/PrivateMeetingAssistant/Debug/CaptureSelfTest.swift`), and `-sampleMeetings YES` shows made-up meetings instead of yours, for screenshots.
 
@@ -107,7 +107,7 @@ stop ─> name the voices ─> summary (Apple Intelligence or Ollama, long meeti
 | `Storage/` | Meeting folders and Markdown, the SQLite index with full-text search, uninstall |
 | `Screen/` | Screenshots and video of the recorded app's window |
 | `Views/` | SwiftUI: meeting list, recording panel and live view, meeting page, setup, settings |
-| `Debug/` | Command-line self-tests and sample meetings (debug builds only) |
+| `Debug/` | Command-line self-tests (debug builds only) |
 
 App data (the index, models, a downloaded Ollama) lives in `~/Library/Application Support/dev.ruy.private-meeting-assistant/`; meetings live in the folder you choose.
 

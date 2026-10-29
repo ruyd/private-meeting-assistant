@@ -3,14 +3,13 @@
 # hand (and for agents, which can't see the screen otherwise).
 #
 #   run-app.sh build                     # regenerate the project and build Debug
-#   run-app.sh launch [args…]            # quit any running copy, launch with sample meetings + args
+#   run-app.sh launch [args…]            # quit any running copy, launch with args
 #   run-app.sh shot <out.png> [title]    # screenshot the app's window (title substring; default: main window)
 #   run-app.sh settings [Tab]            # open Settings, optionally on a tab ("Accounts", "Storage"…)
 #   run-app.sh windows                   # list the app's on-screen windows (id, title)
 #   run-app.sh quit
 #
-# `launch` passes `-sampleMeetings YES` so the list shows made-up meetings instead of yours; pass
-# `-sampleMeetings NO` to see real ones. Screenshots and `settings` need Screen Recording and
+# The app shows your real meetings. Screenshots and `settings` need Screen Recording and
 # Accessibility permission for the terminal (or Claude) that runs this.
 set -euo pipefail
 
@@ -59,7 +58,7 @@ case "${1:-}" in
     [[ -d "$app" ]] || { echo "Not built yet: run '$0 build' first" >&2; exit 1; }
     quit_app
     sleep 1
-    open -n "$app" --args -sampleMeetings YES "$@"
+    open -n "$app" --args "$@"
     # Wait for the main window.
     for _ in {1..30}; do
       [[ -n "$(windows)" ]] && break

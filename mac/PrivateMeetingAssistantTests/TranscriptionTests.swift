@@ -64,6 +64,42 @@ struct TranscriptionPipelineTests {
         let first = try #require(result.first)
         #expect((400...1300).contains(first.startMs), "first line at \(first.startMs) ms")
     }
+
+    /// Speech well below normal levels (about -45 dBFS, someone far from the mic) is still
+    /// transcribed: dropping invented lines mustn't drop real ones.
+    @Test(.timeLimit(.minutes(5)))
+    func quietSpeechIsKept() async throws {
+        let model = try #require(SpeechModel.catalog.first(where: ModelStore.isComplete))
+        let transcriber = try await Transcriber.load(model)
+        let clip = try fixture()
+        let rms = (clip.reduce(0) { $0 + $1 * $1 } / Float(clip.count)).squareRoot()
+        let quiet = clip.map { $0 * 0.0056 / rms }
+        let lines = try await transcriber.transcribe(quiet, language: "en")
+        for l in lines { print(String(format: "quiet: noSpeech %.2f confidence %.2f %@", l.noSpeech, l.confidence, l.text)) }
+        #expect(lines.map(\.text).joined(separator: " ").lowercased().contains("ask not what your country can do for you"))
+    }
+
+    /// Room hum with keyboard clicks, the kind of noise that starts an utterance: Whisper tends to
+    /// write "Thank you." over it, which must not reach the transcript.
+    @Test(.timeLimit(.minutes(5)))
+    func clicksAndHumAreNotTranscribed() async throws {
+        let model = try #require(SpeechModel.catalog.first(where: ModelStore.isComplete))
+        let transcriber = try await Transcriber.load(model)
+        var seed: UInt32 = 7
+        func noise() -> Float {
+            seed = seed &* 1_664_525 &+ 1_013_904_223
+            return Float(seed) / Float(UInt32.max) * 2 - 1
+        }
+        var audio = (0..<(16_000 * 6)).map { i in 0.002 * noise() + 0.003 * sin(Float(i) * 2 * .pi * 120 / 16_000) }
+        // A key press every 150–400 ms: a sharp decaying click.
+        var at = 3_000
+        while at < audio.count - 800 {
+            for k in 0..<800 { audio[at + k] += 0.25 * noise() * exp(-Float(k) / 90) }
+            at += 2_400 + Int(abs(noise()) * 4_000)
+        }
+        let lines = try await transcriber.transcribe(audio, language: "en")
+        #expect(lines.isEmpty, "\(lines.map { "\($0.text) (noSpeech \($0.noSpeech))" })")
+    }
 }
 
 private final class BundleToken {}

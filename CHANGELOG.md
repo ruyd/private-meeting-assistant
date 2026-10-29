@@ -15,6 +15,7 @@ a successful release they add the build to **Published builds** and tag the comm
 - Rename a meeting while recording (its folder follows when the recording stops), and a clearer rename button on the meeting page.
 - Notes: type them while recording or afterwards; they're saved in notes.md, searchable, and used for the summary.
 - Live transcript: words appear as they're spoken (about half a second, with Apple's on-device recognizer), then Whisper's more accurate line replaces them a few seconds later. The Live / Delayed switch in the recording view turns it off.
+- Fewer invented lines: Whisper's stock phrases over room noise and keyboard clicks ("Thank you.", "I'm going to go ahead…") and its repeat loops no longer reach the transcript.
 - Saved audio no longer crackles: small gaps and overlaps between captured chunks (2–9 ms dropouts) are gone.
 
 ## 1.0.0 — 2026-10-28

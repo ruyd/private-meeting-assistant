@@ -123,10 +123,7 @@ struct MeetingsView: View {
     /// Everything but the meeting being recorded, which has the row at the top.
     private var pastMeetings: [Meeting] {
         let live = recorder.phase == .idle ? nil : recorder.meetingID
-        let meetings = library.meetings.filter { $0.id != live }
-        // Sample mode shows only the samples, so screenshots for docs never include real meetings.
-        let samples = SampleMeetings.all
-        return samples.isEmpty ? meetings : samples
+        return library.meetings.filter { $0.id != live }
     }
 
     private func sectionTitle(_ label: String) -> some View {
@@ -259,20 +256,17 @@ private struct MeetingCard: View {
             Image(decorative: thumbnail, scale: 1)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-        } else if SampleMeetings.isVoiceOnly(meeting.id) {
+        } else {
+            // No screenshots: nothing to show of it but that it was heard.
             ZStack {
                 Rectangle().fill(Theme.raised)
                 Image(systemName: "mic").font(.system(size: 18)).foregroundStyle(.secondary)
             }
-        } else {
-            TiledPreview(seed: Int(truncatingIfNeeded: meeting.id), badge: SampleMeetings.app(of: meeting.id))
         }
     }
 
     private var whenLine: String {
-        let time = meeting.startedAt.formatted(date: .omitted, time: .shortened)
-        if SampleMeetings.isVoiceOnly(meeting.id) { return "\(time) · Voice only" }
-        return SampleMeetings.app(of: meeting.id).map { "\(time) · \($0)" } ?? time
+        meeting.startedAt.formatted(date: .omitted, time: .shortened)
     }
 
     private var summaryLine: String {

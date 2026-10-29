@@ -11,10 +11,16 @@ final class Transcriber: @unchecked Sendable {
         let start: Float
         let end: Float
         let text: String
+        /// Whisper's mean probability for the line's words (0…1).
+        var confidence: Float = 1
+        /// Whisper's estimate that the audio held no speech (0…1).
+        var noSpeech: Float = 0
     }
 
-    /// Segments Whisper is this sure contain no speech are dropped.
-    static let noSpeechThreshold: Float = 0.6
+    /// Segments Whisper thinks this likely contain no speech are dropped. Over room noise and
+    /// keyboard clicks it writes stock phrases ("Thank you.", "I'm going to go ahead…") with 0.3–0.6;
+    /// speech, even quiet, stays under 0.1.
+    static let noSpeechThreshold: Float = 0.3
     /// whisper.cpp rejects input shorter than a second; shorter utterances are padded with silence.
     private static let minimumSamples = 17_600
 
@@ -141,19 +147,38 @@ final class Transcriber: @unchecked Sendable {
         guard status == 0 else { throw TranscriberError.failed(status) }
 
         let trace = ProcessInfo.processInfo.environment["PMA_TRACE_SEGMENTS"] != nil
+        var previous: String?
         return (0..<whisper_full_n_segments_from_state(state)).compactMap { i in
             let text = String(cString: whisper_full_get_segment_text_from_state(state, i))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let noSpeech = whisper_full_get_segment_no_speech_prob_from_state(state, i)
-            if trace { print(String(format: "segment: noSpeech %.2f %@", noSpeech, text)) }
+            let confidence = meanTokenProbability(segment: i)
+            if trace { print(String(format: "segment: noSpeech %.2f confidence %.2f %@", noSpeech, confidence, text)) }
             guard noSpeech < Self.noSpeechThreshold, !Self.isNoiseMarker(text) else { return nil }
+            // Stuck in a loop: the same sentence again and again.
+            guard text != previous else { return nil }
+            previous = text
             // Timestamps are in hundredths of a second.
             return Line(
                 start: Float(whisper_full_get_segment_t0_from_state(state, i)) / 100,
                 end: Float(whisper_full_get_segment_t1_from_state(state, i)) / 100,
-                text: text
+                text: text, confidence: confidence, noSpeech: noSpeech
             )
         }
+    }
+
+    /// The mean probability of a segment's text tokens (timestamps and other special tokens left out).
+    private func meanTokenProbability(segment i: Int32) -> Float {
+        let firstSpecial = whisper_token_eot(context)
+        var sum: Float = 0
+        var count = 0
+        for j in 0..<whisper_full_n_tokens_from_state(state, i) {
+            let token = whisper_full_get_token_data_from_state(state, i, j)
+            guard token.id < firstSpecial else { continue }
+            sum += token.p
+            count += 1
+        }
+        return count == 0 ? 0 : sum / Float(count)
     }
 
     /// Whisper's descriptions of non-speech, e.g. "[BLANK_AUDIO]", "(upbeat music)" or "♪ ♪".

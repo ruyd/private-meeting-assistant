@@ -29,7 +29,7 @@ The app is registered: [App Store Connect app 6828188643](https://appstoreconnec
 4. **Pricing and Availability**: choose the price and the countries.
 5. **App Privacy**: answer "Data Not Collected". Recordings, transcripts, summaries and voice profiles stay on the Mac; calendar sign-ins go straight from the Mac to Google, Microsoft or Zoom, never to you. Link a privacy policy URL that says the same (required for every app).
 6. **App information**: category Productivity, age rating questionnaire, support URL.
-7. **Version page**: description, keywords, and screenshots (16:10, e.g. 2880×1800). `docs/images/` has a start; debug builds launched with `-sampleMeetings YES` show made-up meetings for clean screenshots.
+7. **Version page**: description, keywords, and screenshots (16:10, e.g. 2880×1800). `docs/images/` has a start; take new ones from a Meetings folder with only demo meetings in it.
 8. **App Review notes**, so review goes smoothly. Something like:
    > Records meetings and transcribes them on the Mac. Microphone: records the user. System Audio Recording: hears the other participants in calls (macOS asks). Screen Recording: only for screenshots and video of the meeting app the user picks; nothing is captured otherwise. The first launch downloads a speech model (about 570 MB) from Hugging Face; it's data for whisper.cpp, not code. Summaries use Apple Intelligence (turn it on in System Settings) or the user's own Ollama. To test without a call, choose "Microphone only", press ⌘R, speak, and press ⌘. to stop.
 

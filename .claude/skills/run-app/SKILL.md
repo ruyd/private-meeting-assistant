@@ -10,7 +10,7 @@ Everything goes through `mac/scripts/run-app.sh` (run from the repo root). It fi
 
 ```bash
 mac/scripts/run-app.sh build                       # xcodegen + Debug build; prints errors and BUILD SUCCEEDED/FAILED
-mac/scripts/run-app.sh launch                      # quits any running copy, launches with sample meetings, prints windows
+mac/scripts/run-app.sh launch                      # quits any running copy, launches, prints windows
 mac/scripts/run-app.sh shot <scratchpad>/main.png  # screenshot of the main window
 mac/scripts/run-app.sh settings Accounts           # open Settings on a tab: Transcription, Summaries, Accounts, Storage, Permissions, About
 mac/scripts/run-app.sh shot <scratchpad>/settings.png Accounts   # screenshot a window by title substring
@@ -32,9 +32,8 @@ translucent areas such as the sidebar come out blank.
 ## Notes
 
 - Save screenshots in the session's scratchpad directory, not the repo.
-- `launch` passes `-sampleMeetings YES`: the meeting list shows made-up meetings (never saved), so
-  screenshots don't expose the user's real meetings. Extra args go to the app, e.g.
-  `launch -sampleMeetings NO` for real data, or the Debug self-tests `--capture-test`,
+- The app shows the user's real meetings, so screenshots include them: keep them in the scratchpad
+  and don't publish them. Extra args go to the app, e.g. the Debug self-tests `--capture-test`,
   `--transcribe-test` (see `mac/PrivateMeetingAssistant/Debug/CaptureSelfTest.swift`).
 - The main window's title is the page shown ("New Recording", or a meeting's title); Settings' title
   is the selected tab.
