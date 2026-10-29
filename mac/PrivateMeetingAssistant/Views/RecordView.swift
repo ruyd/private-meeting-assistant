@@ -779,11 +779,11 @@ private struct LiveRecordingView: View {
             micName = InputDevices.effective(chosenUID: session.micDeviceUID, among: InputDevices.all())?.name
         }
         .sheet(isPresented: Binding(
-            get: { !recorder.videoWindowChoices.isEmpty },
-            set: { if !$0 { Task { await recorder.chooseVideoWindow(nil) } } }
+            get: { !recorder.windowChoices.isEmpty },
+            set: { if !$0 { Task { await recorder.chooseWindow(nil) } } }
         )) {
-            VideoWindowPicker(appName: recorder.screenshotApp?.name ?? "the app", choices: recorder.videoWindowChoices) { id in
-                Task { await recorder.chooseVideoWindow(id) }
+            CaptureWindowPicker(appName: recorder.screenshotApp?.name ?? "the app", choices: recorder.windowChoices) { id in
+                Task { await recorder.chooseWindow(id) }
             }
         }
     }
@@ -1104,18 +1104,18 @@ private struct VideoButton: View {
     }
 }
 
-/// Asks which of the recorded app's windows to record when it isn't clear (several browser windows,
+/// Asks which of the recorded app's windows to capture when it isn't clear (several browser windows,
 /// none of them a known call or video site): each window's picture and title.
-private struct VideoWindowPicker: View {
+private struct CaptureWindowPicker: View {
     let appName: String
-    let choices: [VideoWindowChoice]
+    let choices: [CaptureWindowChoice]
     let choose: (CGWindowID?) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Which \(appName) window has the video?").font(.title3.weight(.semibold))
-                Text("It's recorded for this meeting's videos while it's open.").foregroundStyle(.secondary)
+                Text("Which \(appName) window?").font(.title3.weight(.semibold))
+                Text("Screenshots and videos use it for the rest of this recording, while it's open.").foregroundStyle(.secondary)
             }
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 16)], spacing: 16) {
@@ -1138,7 +1138,7 @@ private struct VideoWindowPicker: View {
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
-                        .help("Record this window")
+                        .help("Capture this window")
                     }
                 }
             }

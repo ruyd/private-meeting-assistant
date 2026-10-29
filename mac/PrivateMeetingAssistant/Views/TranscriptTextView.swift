@@ -137,31 +137,54 @@ struct TranscriptTextView: NSViewRepresentable {
                 out.append(NSAttributedString(string: "\n", attributes: body))
                 ranges[segment.id] = NSRange(location: start, length: out.length - start)
             } else if let media = item.media {
-                var link = body
-                link[.link] = media.url
-                link[.foregroundColor] = NSColor.secondaryLabelColor
+                let kind = item.isVideo ? "video" : "screenshot"
                 out.append(NSAttributedString(string: "\t", attributes: body))
                 let still = item.isVideo
                     ? ScreenCapture.thumbnail(of: VideoThumbnail.url(for: media.url), maxPixels: 480)
                     : ScreenCapture.thumbnail(of: media.url, maxPixels: 480)
+                // The picture opens the file; the folder after it shows it in Finder.
+                var open = body
+                open[Self.openKey] = media.url
+                open[.cursor] = NSCursor.pointingHand
+                open[.toolTip] = "Open the \(kind)"
                 if let image = still {
                     let width = min(CGFloat(image.width) / 2, 240)
                     let thumbnail = item.isVideo
                         ? VideoThumbnail.withPlayBadge(image, width: width)
                         : NSImage(cgImage: image, size: NSSize(width: width, height: width * CGFloat(image.height) / CGFloat(image.width)))
-                    let attachment = NSTextAttachment()
-                    attachment.attachmentCell = NSTextAttachmentCell(imageCell: thumbnail)
-                    let picture = NSMutableAttributedString(attachment: attachment)
-                    picture.addAttributes(link, range: NSRange(location: 0, length: picture.length))
-                    out.append(picture)
-                    out.append(NSAttributedString(string: item.isVideo ? "  Video" : "  Screenshot", attributes: link))
+                    out.append(Self.attachment(thumbnail, attributes: open))
                 } else {
-                    out.append(NSAttributedString(string: item.isVideo ? "▶︎ Video" : "Screenshot", attributes: link))
+                    var text = open
+                    text[.link] = media.url
+                    text[.foregroundColor] = NSColor.secondaryLabelColor
+                    out.append(NSAttributedString(string: item.isVideo ? "▶︎ Video" : "Screenshot", attributes: text))
+                }
+                if let folder = NSImage(systemSymbolName: "folder", accessibilityDescription: "Show in Finder")?
+                    .withSymbolConfiguration(.init(pointSize: size, weight: .regular).applying(.init(paletteColors: [.secondaryLabelColor]))) {
+                    var reveal = body
+                    reveal[Self.revealKey] = media.url
+                    reveal[.cursor] = NSCursor.pointingHand
+                    reveal[.toolTip] = "Show the \(kind) in Finder"
+                    out.append(NSAttributedString(string: "  ", attributes: body))
+                    out.append(Self.attachment(folder, attributes: reveal))
                 }
                 out.append(NSAttributedString(string: "\n", attributes: body))
             }
         }
         return (out, ranges)
+    }
+
+    /// On a screenshot's or video's picture: the file it opens. On the folder after it: the file
+    /// it shows in Finder.
+    static let openKey = NSAttributedString.Key("pmaOpen")
+    static let revealKey = NSAttributedString.Key("pmaReveal")
+
+    private static func attachment(_ image: NSImage, attributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
+        let attachment = NSTextAttachment()
+        attachment.attachmentCell = NSTextAttachmentCell(imageCell: image)
+        let string = NSMutableAttributedString(attachment: attachment)
+        string.addAttributes(attributes, range: NSRange(location: 0, length: string.length))
+        return string
     }
 
     struct Signature: Equatable {
@@ -209,6 +232,16 @@ struct TranscriptTextView: NSViewRepresentable {
             let visible = view.visibleRect.height
             rect = rect.insetBy(dx: 0, dy: -max((visible - rect.height) / 2, 0))
             view.scrollToVisible(rect)
+        }
+
+        /// Pictures aren't links (clicking one used to do nothing): open or show the file they stand for.
+        func textView(_ textView: NSTextView, clickedOn cell: any NSTextAttachmentCellProtocol, in cellFrame: NSRect, at charIndex: Int) {
+            guard let storage = textView.textStorage, charIndex < storage.length else { return }
+            if let url = storage.attribute(TranscriptTextView.openKey, at: charIndex, effectiveRange: nil) as? URL {
+                NSWorkspace.shared.open(url)
+            } else if let url = storage.attribute(TranscriptTextView.revealKey, at: charIndex, effectiveRange: nil) as? URL {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
         }
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {

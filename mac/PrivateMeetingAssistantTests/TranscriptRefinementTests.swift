@@ -57,12 +57,17 @@ struct TranscriptTextTests {
         let (text, ranges) = TranscriptTextView(segments: segments, videos: [video], fontSize: 14).build()
         let plain = text.string
         // Copying any span gives readable lines: time, speaker, text.
-        #expect(plain == "00:01\tPriya\tRevenue grew by twelve percent.\n00:03\t\t▶︎ Video\n00:04\tMe\tGreat, let's ship on Monday.\n")
+        // (The video has no still here, so it's a "▶︎ Video" link, then the folder icon.)
+        #expect(plain == "00:01\tPriya\tRevenue grew by twelve percent.\n00:03\t\t▶︎ Video  \u{FFFC}\n00:04\tMe\tGreat, let's ship on Monday.\n")
         let second = try #require(ranges[2])
         #expect((plain as NSString).substring(with: second) == "00:04\tMe\tGreat, let's ship on Monday.\n")
         // The time links to the audio, the video to its file.
         #expect(text.attribute(.link, at: second.location, effectiveRange: nil) as? URL == URL(string: "pma-seek:4000"))
         let videoAt = (plain as NSString).range(of: "▶︎ Video").location
         #expect(text.attribute(.link, at: videoAt, effectiveRange: nil) as? URL == video.url)
+        #expect(text.attribute(TranscriptTextView.openKey, at: videoAt, effectiveRange: nil) as? URL == video.url)
+        // The folder icon shows it in Finder.
+        let folderAt = (plain as NSString).range(of: "\u{FFFC}").location
+        #expect(text.attribute(TranscriptTextView.revealKey, at: folderAt, effectiveRange: nil) as? URL == video.url)
     }
 }

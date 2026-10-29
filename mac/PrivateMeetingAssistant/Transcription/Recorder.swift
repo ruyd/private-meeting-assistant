@@ -40,12 +40,16 @@ final class Recorder {
     /// Videos being finished (mic mixed in, cut down), shown as such in the transcript.
     private(set) var finishingVideos: Set<URL> = []
     var isMixingVideo: Bool { !finishingVideos.isEmpty }
-    /// The recorded app's windows, while asking which one has the video (none: not asking).
-    private(set) var videoWindowChoices: [VideoWindowChoice] = []
-    /// How to record the video once its window is chosen.
-    @ObservationIgnored private var pendingVideo: (withMic: Bool, cutSize: Bool)?
-    /// The window chosen for this recording's videos, used again while it's open.
-    @ObservationIgnored private var chosenVideoWindow: CGWindowID?
+    /// The recorded app's windows, while asking which one to capture (none: not asking).
+    private(set) var windowChoices: [CaptureWindowChoice] = []
+    /// What to capture once its window is chosen.
+    @ObservationIgnored private var pendingCapture: PendingCapture?
+    private enum PendingCapture {
+        case video(withMic: Bool, cutSize: Bool)
+        case screenshot(atMs: Int)
+    }
+    /// The window chosen for this recording's screenshots and videos, used again while it's open.
+    @ObservationIgnored private var chosenWindow: CGWindowID?
     /// The audio file, once saving audio was first turned on; the capture threads write to it.
     @ObservationIgnored private let audioFile = AudioFileBox()
     /// Words as they're spoken, per source, until Whisper's line for that stretch arrives
@@ -131,7 +135,7 @@ final class Recorder {
         lines = []
         screenshots = []
         videos = []
-        chosenVideoWindow = nil
+        chosenWindow = nil
         segmentIDs = [:]
         backlog = 0
         self.removeEcho = removeEcho && capture.captureSystemAudio
@@ -285,61 +289,50 @@ final class Recorder {
 
     /// Starts recording the app's window as video, with your (echo-removed) voice mixed in when
     /// `withMic` and cut down (full width, without the browser's tabs and the page below the
-    /// video) and smaller when `cutSize`, or stops the
-    /// recording in progress. With several windows (a browser's), it records the one whose title
-    /// shows a call or a video, or the one chosen before; if neither, it asks
-    /// (`videoWindowChoices`, answered with `chooseVideoWindow`).
+    /// video) and smaller when `cutSize`, or stops the recording in progress. Which window: see
+    /// `captureWindow`.
     func toggleVideo(withMic: Bool = false, cutSize: Bool = false) async {
         if let windowRecorder {
             await windowRecorder.stop()
             return
         }
-        guard phase == .recording, !isStartingVideo, videoWindowChoices.isEmpty, let app = screenshotApp else { return }
+        guard phase == .recording, !isStartingVideo, windowChoices.isEmpty, let app = screenshotApp else { return }
         isStartingVideo = true
         defer { isStartingVideo = false }
         do {
-            guard ScreenCapture.hasPermission else {
-                CGRequestScreenCaptureAccess()
-                throw ScreenCaptureError.permission
-            }
-            let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-            let windows = ScreenCapture.windows(of: app.bundleID, in: content)
-            guard !windows.isEmpty else { throw ScreenCaptureError.noWindow(app.name) }
-            let byTitle = windows.count > 1 ? ScreenCapture.videoWindow(among: windows) : nil
-            let known = windows.count == 1 ? windows[0] : byTitle ?? windows.first { $0.windowID == chosenVideoWindow }
-            liveLog.notice("video window: \(windows.count) windows, \(windows.count == 1 ? "the only one" : byTitle != nil ? "by title" : known != nil ? "chosen before" : "asking", privacy: .public)")
-            if let known {
-                try await startVideo(in: known, withMic: withMic, cutSize: cutSize)
-                return
-            }
-            pendingVideo = (withMic, cutSize)
-            var choices: [VideoWindowChoice] = []
-            for window in windows.sorted(by: { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }) {
-                choices.append(VideoWindowChoice(id: window.windowID, title: window.title ?? app.name, preview: await ScreenCapture.preview(of: window)))
-            }
-            videoWindowChoices = choices
+            guard let window = try await captureWindow(of: app, else: .video(withMic: withMic, cutSize: cutSize)) else { return }
+            try await startVideo(in: window, withMic: withMic, cutSize: cutSize)
         } catch {
             self.error = "Couldn't record video: \(error.localizedDescription)"
         }
     }
 
-    /// Records the video in the window picked from `videoWindowChoices` (nil: cancelled).
-    func chooseVideoWindow(_ id: CGWindowID?) async {
-        let pending = pendingVideo
-        pendingVideo = nil
-        videoWindowChoices = []
-        guard let id, let pending, phase == .recording, windowRecorder == nil, !isStartingVideo else { return }
-        chosenVideoWindow = id
-        isStartingVideo = true
-        defer { isStartingVideo = false }
+    /// Captures what was asked for in the window picked from `windowChoices` (nil: cancelled), and
+    /// keeps using that window for this recording.
+    func chooseWindow(_ id: CGWindowID?) async {
+        let pending = pendingCapture
+        pendingCapture = nil
+        windowChoices = []
+        guard let id, let pending, phase == .recording else { return }
+        chosenWindow = id
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
             guard let window = content.windows.first(where: { $0.windowID == id }) else {
                 throw ScreenCaptureError.noWindow(screenshotApp?.name ?? "the app")
             }
-            try await startVideo(in: window, withMic: pending.withMic, cutSize: pending.cutSize)
+            switch pending {
+            case .video(let withMic, let cutSize):
+                guard windowRecorder == nil, !isStartingVideo else { return }
+                isStartingVideo = true
+                defer { isStartingVideo = false }
+                try await startVideo(in: window, withMic: withMic, cutSize: cutSize)
+            case .screenshot(let atMs):
+                isTakingScreenshot = true
+                defer { isTakingScreenshot = false }
+                try await saveScreenshot(of: window, at: atMs)
+            }
         } catch {
-            self.error = "Couldn't record video: \(error.localizedDescription)"
+            self.error = "Couldn't capture the window: \(error.localizedDescription)"
         }
     }
 
@@ -523,19 +516,47 @@ final class Recorder {
 
     /// Screenshots the app being recorded into the meeting's folder, at the current point in the transcript.
     func takeScreenshot() async {
-        guard phase == .recording, !isTakingScreenshot, let app = screenshotApp, let meetingID, let startedAt,
-              let folder = try? library.store?.meeting(meetingID)?.folder
-        else { return }
+        guard phase == .recording, !isTakingScreenshot, windowChoices.isEmpty, let app = screenshotApp, let startedAt else { return }
         isTakingScreenshot = true
         defer { isTakingScreenshot = false }
         let atMs = Int(Date().timeIntervalSince(startedAt) * 1000)
         do {
-            let png = try await ScreenCapture.screenshot(of: app.bundleID, appName: app.name)
-            screenshots.append(try MeetingFiles.saveScreenshot(png, at: atMs, in: folder))
-            scheduleFileWrite(meetingID)
+            guard let window = try await captureWindow(of: app, else: .screenshot(atMs: atMs)) else { return }
+            try await saveScreenshot(of: window, at: atMs)
         } catch {
             self.error = "Couldn't take a screenshot: \(error.localizedDescription)"
         }
+    }
+
+    private func saveScreenshot(of window: SCWindow, at atMs: Int) async throws {
+        guard let meetingID, let folder = try? library.store?.meeting(meetingID)?.folder else { return }
+        let png = try await ScreenCapture.screenshot(of: window)
+        screenshots.append(try MeetingFiles.saveScreenshot(png, at: atMs, in: folder))
+        scheduleFileWrite(meetingID)
+    }
+
+    /// The window of `app` to capture. With several (a browser's): the one whose title shows a call
+    /// or a video, else the one chosen earlier in this recording; if neither, nil, and it asks
+    /// (`windowChoices`, answered with `chooseWindow`, which then does `pending`).
+    private func captureWindow(of app: (bundleID: String, name: String), else pending: PendingCapture) async throws -> SCWindow? {
+        guard ScreenCapture.hasPermission else {
+            CGRequestScreenCaptureAccess()
+            throw ScreenCaptureError.permission
+        }
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        let windows = ScreenCapture.windows(of: app.bundleID, in: content)
+        guard !windows.isEmpty else { throw ScreenCaptureError.noWindow(app.name) }
+        let byTitle = windows.count > 1 ? ScreenCapture.videoWindow(among: windows) : nil
+        let known = windows.count == 1 ? windows[0] : byTitle ?? windows.first { $0.windowID == chosenWindow }
+        liveLog.notice("capture window: \(windows.count) windows, \(windows.count == 1 ? "the only one" : byTitle != nil ? "by title" : known != nil ? "chosen before" : "asking", privacy: .public)")
+        if let known { return known }
+        pendingCapture = pending
+        var choices: [CaptureWindowChoice] = []
+        for window in windows.sorted(by: { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }) {
+            choices.append(CaptureWindowChoice(id: window.windowID, title: window.title ?? app.name, preview: await ScreenCapture.preview(of: window)))
+        }
+        windowChoices = choices
+        return nil
     }
 
     /// Takes a line from Whisper, unless the live recognizer heard no words where it was said. Its
@@ -621,8 +642,8 @@ private final class DeliveryCount: Sendable {
 }
 
 /// The audio file being written, swapped in from the main actor and fed from capture threads.
-/// A window of the recorded app to choose for a video.
-struct VideoWindowChoice: Identifiable {
+/// A window of the recorded app to choose for screenshots and videos.
+struct CaptureWindowChoice: Identifiable {
     let id: CGWindowID
     let title: String
     let preview: CGImage?

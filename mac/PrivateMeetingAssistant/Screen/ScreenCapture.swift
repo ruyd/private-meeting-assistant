@@ -7,16 +7,8 @@ import ScreenCaptureKit
 enum ScreenCapture {
     static var hasPermission: Bool { CGPreflightScreenCaptureAccess() }
 
-    /// A PNG of the app's main window. Fails rather than capture anything else when the app has no
-    /// window on screen (minimized, or in another Space).
-    static func screenshot(of bundleID: String, appName: String) async throws -> Data {
-        guard hasPermission else {
-            // Shows the system prompt the first time; after that the user has to allow it in System Settings.
-            CGRequestScreenCaptureAccess()
-            throw ScreenCaptureError.permission
-        }
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-        guard let window = mainWindow(of: bundleID, in: content) else { throw ScreenCaptureError.noWindow(appName) }
+    /// A PNG of `window` (the recorder picks which: `Recorder.captureWindow`).
+    @MainActor static func screenshot(of window: SCWindow) async throws -> Data {
         let image = try await capture(window)
         guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
             throw ScreenCaptureError.encoding
@@ -75,13 +67,13 @@ enum ScreenCapture {
         return try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
 
-    private static func capture(_ window: SCWindow) async throws -> CGImage {
+    @MainActor private static func capture(_ window: SCWindow) async throws -> CGImage {
         let filter = SCContentFilter(desktopIndependentWindow: window)
         return try await capture(filter, size: window.frame.size)
     }
 
     /// At full (Retina) resolution.
-    private static func capture(_ filter: SCContentFilter, size: CGSize) async throws -> CGImage {
+    @MainActor private static func capture(_ filter: SCContentFilter, size: CGSize) async throws -> CGImage {
         let config = SCStreamConfiguration()
         let scale = CGFloat(filter.pointPixelScale)
         config.width = max(Int(size.width * scale), 1)
