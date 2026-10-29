@@ -285,11 +285,36 @@ private struct PermissionSettings: View {
     }
 }
 
-/// Settings › About: version, the privacy promise, and uninstalling.
+/// Settings › About: version, the privacy promise, the open-source software and models it uses
+/// (with their licenses), and uninstalling (not in the App Store version).
 private struct AboutSettings: View {
     @AppStorage(Uninstaller.keepMeetingsKey) private var keepMeetings = true
     @State private var confirmUninstall = false
     @State private var uninstallError: String?
+    @State private var showLicenses = false
+
+    private struct Credit: Identifiable {
+        let name: String
+        let use: String
+        let license: String
+        let url: String
+        var id: String { name }
+    }
+
+    private static var credits: [Credit] {
+        var all = [
+            Credit(name: "whisper.cpp", use: "Speech to text", license: "MIT", url: "https://github.com/ggml-org/whisper.cpp"),
+            Credit(name: "Whisper models", use: "OpenAI's speech models", license: "MIT", url: "https://github.com/openai/whisper"),
+            Credit(name: "Silero VAD", use: "Telling speech from noise", license: "MIT", url: "https://github.com/snakers4/silero-vad"),
+            Credit(name: "WeSpeaker", use: "Telling voices apart, via pyannote and Fluid Inference", license: "CC BY 4.0", url: "https://github.com/wenet-e2e/wespeaker"),
+            Credit(name: "SpeexDSP", use: "Echo cancellation and noise suppression", license: "BSD", url: "https://github.com/xiph/speexdsp"),
+            Credit(name: "GRDB.swift", use: "The meetings database", license: "MIT", url: "https://github.com/groue/GRDB.swift"),
+        ]
+        #if !APPSTORE
+        all.append(Credit(name: "Ollama", use: "Runs the summary model", license: "MIT", url: "https://github.com/ollama/ollama"))
+        #endif
+        return all
+    }
 
     var body: some View {
         Form {
@@ -301,6 +326,31 @@ private struct AboutSettings: View {
                     Text("Privacy")
                     Text("Recording, transcription and summaries all run locally. The only downloads are the models, and nothing you record is ever uploaded.")
                 }
+            }
+
+            Section {
+                ForEach(Self.credits) { credit in
+                    LabeledContent {
+                        Text(credit.license).foregroundStyle(.secondary)
+                    } label: {
+                        if let url = URL(string: credit.url) {
+                            Link(credit.name, destination: url)
+                        } else {
+                            Text(credit.name)
+                        }
+                        Text(credit.use)
+                    }
+                }
+                LabeledContent {
+                    Button("Licenses…") { showLicenses = true }
+                } label: {
+                    Text("Licenses")
+                    Text("The copyright notices and license terms of the software and models above.")
+                }
+            } header: {
+                Text("Credits")
+            } footer: {
+                Text("Built on open-source software and models. Thank you to their authors.")
             }
 
             // App Store apps are removed from Launchpad or the Applications folder; a sandboxed app
@@ -326,6 +376,7 @@ private struct AboutSettings: View {
             #endif
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $showLicenses) { LicensesSheet { showLicenses = false } }
         .confirmationDialog("Uninstall Private Meeting Assistant?", isPresented: $confirmUninstall) {
             Button(keepMeetings ? "Uninstall, Keep Meetings" : "Uninstall and Delete Meetings", role: .destructive) {
                 do {
@@ -342,6 +393,35 @@ private struct AboutSettings: View {
     private var version: String {
         let info = Bundle.main.infoDictionary
         return "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
+    }
+}
+
+/// The bundled Acknowledgements.txt: each component's copyright notice and license.
+private struct LicensesSheet: View {
+    let close: () -> Void
+
+    private var text: String {
+        Bundle.main.url(forResource: "Acknowledgements", withExtension: "txt")
+            .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? "The licenses are missing from this copy of the app."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ModalHeader(title: "Licenses", subtitle: "The open-source software and models Private Meeting Assistant uses.")
+            ScrollView {
+                Text(text)
+                    // Small enough for the licenses' 80-character lines to fit whole.
+                    .font(.system(size: 10, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .background(Theme.surface, in: .rect(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.stroke))
+        }
+        .padding(20)
+        .frame(width: 600, height: 540)
+        .modalCloseButton(action: close)
     }
 }
 

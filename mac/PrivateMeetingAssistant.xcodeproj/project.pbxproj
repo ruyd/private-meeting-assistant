@@ -36,7 +36,6 @@
 		54462F7F0FC4491BF865B176 /* InputDevices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A66EACCE136FEBDC2046FF /* InputDevices.swift */; };
 		54F618C04BD5BDD54375251D /* EchoReplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB6C8B1A7026B4B5813BF953 /* EchoReplayTests.swift */; };
 		55D39A26CAF9D567F32A6D8F /* VideoThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40A0FDC13340B2C65C06E299 /* VideoThumbnail.swift */; };
-		5942F8FA0654E972FBC2A14D /* silero-vad-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 25167838B11C714E181DFB95 /* silero-vad-LICENSE.txt */; };
 		5C2EB9AA1DEE001662171EA3 /* SummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F126C4A32389A9CB501D00 /* SummaryTests.swift */; };
 		5CC17E557B0F4655FBC013F0 /* TranscriptionPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2F4C682D2D46C1B89E6B9AF /* TranscriptionPipeline.swift */; };
 		5E1F0FF7CB14E9354BF9EE63 /* MeetingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7928EA88F84F6197CFC7308 /* MeetingsView.swift */; };
@@ -60,6 +59,7 @@
 		95F2B03B6FFC8FB8D7461F8E /* ModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9CC8679F104C1E6DB490C3F /* ModelStore.swift */; };
 		96F6FA085CB7D817977ED06E /* SpeexDSP in Frameworks */ = {isa = PBXBuildFile; productRef = 9B68F88AD9E7EFEB96A5396A /* SpeexDSP */; };
 		A7145E57E7275A83B8D302C7 /* AudioPlayerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60B20371B9673CAE557255D6 /* AudioPlayerBar.swift */; };
+		A849A0EB56221399C1820608 /* Acknowledgements.txt in Resources */ = {isa = PBXBuildFile; fileRef = BBB7B7CB0B599072DFC703EB /* Acknowledgements.txt */; };
 		ABCD2751E51880066145DFD9 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77BAC96D52D819A9A7D781F0 /* Keychain.swift */; };
 		ADA72C90F4F909E0A8536609 /* VideoWindowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 931F9ED8C081AF78A8DF155E /* VideoWindowTests.swift */; };
 		AE2300E613F82A5801248E2E /* TranscriptTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD51FCA0EB1B17C99171B43C /* TranscriptTextView.swift */; };
@@ -138,7 +138,6 @@
 		13304DAB75AE7345800AA97B /* EchoCanceller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoCanceller.swift; sourceTree = "<group>"; };
 		1598FA704419441E27938234 /* jfk.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = jfk.wav; sourceTree = "<group>"; };
 		1DA321EF12BE492A470B776B /* InputDevicesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputDevicesTests.swift; sourceTree = "<group>"; };
-		25167838B11C714E181DFB95 /* silero-vad-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "silero-vad-LICENSE.txt"; sourceTree = "<group>"; };
 		25290BD5DA5524AFE344677D /* SpeakerTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerTracker.swift; sourceTree = "<group>"; };
 		27A66EACCE136FEBDC2046FF /* InputDevices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputDevices.swift; sourceTree = "<group>"; };
 		28CDAA5D16AD1F9B9BCADEA0 /* OAuth.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = OAuth.xcconfig; sourceTree = "<group>"; };
@@ -185,6 +184,7 @@
 		AFE42A2FF34BDCA940D2C70A /* MicCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicCapture.swift; sourceTree = "<group>"; };
 		B948B62DE8CEC68EF455431A /* Summarizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Summarizer.swift; sourceTree = "<group>"; };
 		B9CC8679F104C1E6DB490C3F /* ModelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelStore.swift; sourceTree = "<group>"; };
+		BBB7B7CB0B599072DFC703EB /* Acknowledgements.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = Acknowledgements.txt; sourceTree = "<group>"; };
 		C03C7B862C67EFD1052E415A /* MeetingFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingFiles.swift; sourceTree = "<group>"; };
 		C2F4C682D2D46C1B89E6B9AF /* TranscriptionPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipeline.swift; sourceTree = "<group>"; };
 		C5D907180FFAD48F316DDE82 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -334,6 +334,7 @@
 		848761AED89531BF022CC0AD /* PrivateMeetingAssistant */ = {
 			isa = PBXGroup;
 			children = (
+				BBB7B7CB0B599072DFC703EB /* Acknowledgements.txt */,
 				55C374E01F05CA31DDA87BA7 /* AppStore.entitlements */,
 				0A1E9C26D9D4A1CB9E1FB8FF /* Assets.xcassets */,
 				F6B2AB43F3BA84182522424C /* ContentView.swift */,
@@ -423,7 +424,6 @@
 		E519040CBF7DF02A39188219 /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				25167838B11C714E181DFB95 /* silero-vad-LICENSE.txt */,
 				0DAD473625ABF851B14D880D /* silero-vad.mlmodelc */,
 			);
 			path = Models;
@@ -557,9 +557,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A849A0EB56221399C1820608 /* Acknowledgements.txt in Resources */,
 				C04F32755095E64405F59499 /* Assets.xcassets in Resources */,
 				267DFFF8C1B696BE4C768BDB /* PrivacyInfo.xcprivacy in Resources */,
-				5942F8FA0654E972FBC2A14D /* silero-vad-LICENSE.txt in Resources */,
 				D475220D6052D9937397EEF4 /* silero-vad.mlmodelc in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
