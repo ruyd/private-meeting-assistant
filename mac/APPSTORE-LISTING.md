@@ -1,7 +1,8 @@
 # App Store listing
 
-What to enter in [App Store Connect](https://appstoreconnect.apple.com/apps/6828188643) for version 1.0.
-Each field is ready to paste; lengths are within Apple's limits.
+What to enter in [App Store Connect](https://appstoreconnect.apple.com/apps/6828188643) for version 1.0.0.
+Each field is ready to paste; lengths are within Apple's limits. Filled in through the App Store Connect
+API on 2026-10-29, except App Privacy and the App Review contact, which the API doesn't cover.
 
 ## App Information
 
@@ -24,9 +25,9 @@ calendar sign-ins go straight from the Mac to Google, Microsoft or Zoom. See `PR
 
 ## Pricing and Availability
 
-Paid upfront: choose the price tier and the countries.
+Paid upfront: $9.99 (US; other countries follow Apple's equivalents). Proceeds $8.49.
 
-## Version 1.0
+## Version 1.0.0
 
 | Field | Value |
 |---|---|
@@ -74,8 +75,11 @@ Requires macOS 26 or later. Summaries with Apple Intelligence need a Mac with Ap
 
 ### Screenshots
 
-1 to 10 images at 16:10: 2880×1800 (or 2560×1600, 1440×900, 1280×800). Take them from a Meetings folder
-with only demo meetings, so no real names or calls show. Suggested, in this order:
+1 to 10 images at 16:10: 2880×1800 (or 2560×1600, 1440×900, 1280×800), from demo meetings only. To make
+them: record demo meetings with scripted voices into a separate library (the Debug self-test,
+`--transcribe-test <seconds> <folder> --muted --speakers --names A,B --title "…"` while `say` or `afplay` plays
+the lines), open it with `-demoLibrary <folder> -micMuted YES`, set the window to 1440×900 points, and
+capture with `mac/scripts/run-app.sh shot`; save as JPEG (no transparency). The 1.0.0 set, in order:
 
 1. A recording in progress: the live transcript with Participant labels, words appearing.
 2. A finished meeting: summary, decisions and action items above the transcript.

@@ -97,10 +97,13 @@ extension CaptureSelfTest {
 
 extension CaptureSelfTest {
     /// `--transcribe-test <seconds> <output-dir> [--model <id>] [--app <bundle-id>] [--keep-echo]
-    /// [--video | --video-mic] [--cut] [--muted] [--save-audio]`: records with live transcription and writes transcript.json (lines in
+    /// [--video | --video-mic] [--cut] [--muted] [--save-audio] [--title <name>] [--speakers]
+    /// [--names <a,b,…>]`: records with live transcription and writes transcript.json (lines in
     /// order, with timing). `--video` records the app's window from 2 s in until 2 s before the end
     /// (`--video-mic` with your voice mixed in, `--cut` cut down to the video in it), into the output
     /// folder's Meetings. `--muted` starts with the microphone muted; `--save-audio` saves audio.m4a.
+    /// `--speakers` tells voices apart, and `--names` names Participant 1, 2… when it stops. The
+    /// output folder can be opened as a library with `-demoLibrary <folder>` (App Store screenshots).
     @MainActor
     static func transcribe(seconds: Double, to dir: URL, args: [String]) async {
         let modelID = args.firstIndex(of: "--model").flatMap { args.count > $0 + 1 ? args[$0 + 1] : nil }
@@ -108,13 +111,16 @@ extension CaptureSelfTest {
         // Saves to its own database in the output folder, never the real archive.
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let store = try? MeetingStore.open(at: dir.appending(path: "meetings.sqlite"))
-        let recorder = Recorder(library: MeetingLibrary(store: store), meetingsRoot: dir.appending(path: "Meetings"), remembersMute: false)
+        let library = MeetingLibrary(store: store)
+        let recorder = Recorder(library: library, meetingsRoot: dir.appending(path: "Meetings"), remembersMute: false)
         if let a = args.firstIndex(of: "--app"), args.count > a + 1 {
             recorder.capture.target = .app(bundleID: args[a + 1], name: args[a + 1])
         }
         recorder.isMicMuted = args.contains("--muted")
         let clock = ContinuousClock.now
-        await recorder.start(title: "Self-test", model: model, language: "en", removeEcho: !args.contains("--keep-echo"), saveAudio: args.contains("--save-audio"))
+        let title = args.firstIndex(of: "--title").flatMap { args.count > $0 + 1 ? args[$0 + 1] : nil } ?? "Self-test"
+        await recorder.start(title: title, model: model, language: "en", removeEcho: !args.contains("--keep-echo"),
+                             identifySpeakers: args.contains("--speakers"), saveAudio: args.contains("--save-audio"))
         log.notice("transcribe test: started in \(ContinuousClock.now - clock, privacy: .public), phase \(String(describing: recorder.phase), privacy: .public), error \(recorder.error ?? "none", privacy: .public)")
         if args.contains("--video") || args.contains("--video-mic"), seconds > 5 {
             try? await Task.sleep(for: .seconds(2))
@@ -128,6 +134,12 @@ extension CaptureSelfTest {
         }
         let stopClock = ContinuousClock.now
         await recorder.stop()
+        // Name the voices told apart, in order; that also lets the summary waiting for names start.
+        if let n = args.firstIndex(of: "--names"), args.count > n + 1, let id = recorder.meetingID {
+            let names = args[n + 1].split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+            let numbers = ((try? store?.speakers(of: id)) ?? []).map(\.number).sorted()
+            library.nameSpeakers(id, Dictionary(uniqueKeysWithValues: zip(numbers, names.map { Optional($0) })))
+        }
         let lines = recorder.lines.map {
             ["speaker": $0.source.speaker, "startMs": $0.startMs, "endMs": $0.endMs, "text": $0.text] as [String: Any]
         }

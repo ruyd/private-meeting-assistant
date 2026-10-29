@@ -20,6 +20,11 @@ enum MeetingFiles {
     /// bookmark saved when the folder was chosen.
     static var root: URL? {
         get {
+            #if DEBUG
+            if let demo = UserDefaults.standard.string(forKey: "demoLibrary") {
+                return URL(fileURLWithPath: demo).appending(path: "Meetings", directoryHint: .isDirectory)
+            }
+            #endif
             #if APPSTORE
             _ = FolderAccess.restored
             guard let path = UserDefaults.standard.string(forKey: rootKey), FolderAccess.isGranted(path) else { return nil }

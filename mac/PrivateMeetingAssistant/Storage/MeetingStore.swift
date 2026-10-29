@@ -75,7 +75,15 @@ final class MeetingStore: Sendable {
 
     private let db: DatabaseQueue
 
-    static var defaultURL: URL { ModelStore.dataFolder.appending(path: "index.sqlite") }
+    static var defaultURL: URL {
+        #if DEBUG
+        // `-demoLibrary <folder>`: a separate library of demo meetings, for App Store screenshots.
+        if let demo = UserDefaults.standard.string(forKey: "demoLibrary") {
+            return URL(fileURLWithPath: demo).appending(path: "meetings.sqlite")
+        }
+        #endif
+        return ModelStore.dataFolder.appending(path: "index.sqlite")
+    }
 
     static func open(at url: URL = defaultURL) throws -> MeetingStore {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
