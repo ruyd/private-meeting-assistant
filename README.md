@@ -60,8 +60,11 @@ On first launch, a short setup walks through where meetings are saved, the micro
 | Speech (whisper.cpp) | Base (English) 148 MB, Small (English) 488 MB, Large v3 Turbo 574 MB | Large v3 Turbo |
 | Summaries (Ollama) | Any local model in your Ollama, or one downloaded into the app's own | Gemma 4 12B with 24 GB of memory or more, Gemma 3 4B otherwise |
 | Speakers | WeSpeaker ResNet34 (Core ML) 8 MB | Downloaded when "Tell speakers apart" is on |
+| Voice activity | Silero VAD v6 (Core ML) 0.9 MB | Ships with the app |
 
 The speaker model is [WeSpeaker](https://github.com/wenet-e2e/wespeaker)'s VoxCeleb ResNet34 as packaged by [pyannote](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM), in [Fluid Inference's Core ML conversion](https://huggingface.co/FluidInference/speaker-diarization-coreml) (modified from the original), under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/).
+
+The voice activity model, which keeps stretches with nobody talking (a fan, key clicks, a quiet room) away from Whisper so it doesn't write "Thank you." over them, is [Silero VAD](https://github.com/snakers4/silero-vad) v6.0.0 in [Fluid Inference's Core ML conversion](https://huggingface.co/FluidInference/silero-vad-coreml), MIT (`mac/PrivateMeetingAssistant/Models/silero-vad-LICENSE.txt`).
 
 The speech model is freed while a summary is written, so the two never compete for memory.
 

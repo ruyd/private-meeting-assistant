@@ -126,6 +126,7 @@ final class TranscriptionPipeline: Sendable {
         removeEcho: Bool = true,
         voiceprinter: Voiceprinter? = nil,
         identifySpeakers: Set<AudioSource> = [],
+        voiceActivity: VoiceActivity? = VoiceActivity.bundled(),
         onAudio: (@Sendable (AudioSource, [Float], Int) -> Void)? = nil,
         onLine: @escaping @Sendable (TranscriptLine) -> Void,
         onBacklog: @escaping @Sendable (Int) -> Void
@@ -141,6 +142,13 @@ final class TranscriptionPipeline: Sendable {
         worker = Task.detached(priority: .userInitiated) {
             for await job in stream {
                 let u = job.utterance
+                // Loud enough for the segmenter but nobody talking (a fan, clicks, a quiet room):
+                // Whisper would write "Thank you." over it.
+                if let voiceActivity, !voiceActivity.hasSpeech(u.samples) {
+                    log.debug("skipped \(u.endMs - u.startMs) ms without speech")
+                    onBacklog(queued.add(-1))
+                    continue
+                }
                 do {
                     for line in try await transcriber.transcribe(u.samples, language: language) {
                         var out = TranscriptLine(

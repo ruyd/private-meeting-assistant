@@ -49,8 +49,19 @@ struct InventedLinesReplay {
         var segmenter = Segmenter()
         var utterances = segmenter.push(samples)
         if let last = segmenter.flush() { utterances.append(last) }
+        // TEST_RUNNER_SILERO_MODEL=<…mlmodelc>: Silero's speech probabilities per utterance.
+        let vad = ProcessInfo.processInfo.environment["SILERO_MODEL"].flatMap { VoiceActivity.load(from: URL(fileURLWithPath: $0)) }
         for u in utterances {
-            print(String(format: "replay: utterance %5.2f-%5.2fs", Double(u.startMs) / 1000, Double(u.endMs) / 1000))
+            var silero = ""
+            if let vad {
+                vad.reset()
+                let p = vad.probabilities(u.samples[...])
+                let speech = p.filter { $0 >= 0.5 }.count
+                var run = 0, longest = 0
+                for x in p { run = x >= 0.5 ? run + 1 : 0; longest = max(longest, run) }
+                silero = String(format: "  silero max %.2f, speech %d of %d chunks, longest %d", p.max() ?? 0, speech, p.count, longest)
+            }
+            print(String(format: "replay: utterance %5.2f-%5.2fs%@", Double(u.startMs) / 1000, Double(u.endMs) / 1000, silero))
             for line in try await transcriber.transcribe(u.samples, language: "en") {
                 print(String(format: "replay: %5.2f-%5.2fs  noSpeech %.2f confidence %.2f  %@",
                              Double(u.startMs) / 1000, Double(u.endMs) / 1000, line.noSpeech, line.confidence, line.text))
