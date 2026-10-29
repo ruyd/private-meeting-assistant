@@ -43,6 +43,9 @@ final class TranscriptionPipeline: Sendable {
         var segmenters: [AudioSource: Segmenter] = [:]
         /// nil when echo removal is off (e.g. the user wears headphones and turned it off).
         var echoGate: EchoGate?
+        /// Steady background noise off the mic, after echo removal (before it, it would upset the
+        /// echo canceller, which needs the mic as the room heard it).
+        var denoiser = NoiseSuppressor()
         /// 30 ms frames (by meeting position) in which the far end played, for the last few seconds.
         var farEndFrames: Set<Int> = []
         /// The meeting position from which echo removal knows the echo's delay and level and
@@ -78,6 +81,10 @@ final class TranscriptionPipeline: Sendable {
                 }
             }
             return out
+        }
+
+        mutating func denoise(_ samples: [Float], at position: Int) -> (samples: [Float], position: Int) {
+            denoiser?.process(samples, at: position) ?? (samples, position)
         }
 
         /// Cuts `samples` (starting at absolute sample `position`) into utterances.
@@ -168,8 +175,9 @@ final class TranscriptionPipeline: Sendable {
                 return state.segment(.system, chunk.samples, at: position)
             case .mic:
                 guard state.echoGate != nil else {
-                    onAudio?(.mic, chunk.samples, position)
-                    return state.segment(.mic, chunk.samples, at: position)
+                    let mic = state.denoise(chunk.samples, at: position)
+                    onAudio?(.mic, mic.samples, mic.position)
+                    return state.segment(.mic, mic.samples, at: mic.position)
                 }
                 let gated = state.echoGate?.processMic(chunk.samples, at: position)
                 if state.echoRemovalReadyAt == nil, state.echoGate?.delay != nil, state.echoGate?.echoLevel != nil {
@@ -177,8 +185,9 @@ final class TranscriptionPipeline: Sendable {
                     state.echoRemovalReadyAt = position + chunk.samples.count + Int(MonoResampler.sampleRate * 1.5)
                 }
                 guard let gated else { return [] }
-                onAudio?(.mic, state.micForSaving(gated.samples, at: gated.position), gated.position)
-                return state.segment(.mic, gated.samples, at: gated.position)
+                let mic = state.denoise(gated.samples, at: gated.position)
+                onAudio?(.mic, state.micForSaving(mic.samples, at: mic.position), mic.position)
+                return state.segment(.mic, mic.samples, at: mic.position)
             }
         }
         for u in utterances { enqueue(Job(source: chunk.source, utterance: u)) }
@@ -193,8 +202,9 @@ final class TranscriptionPipeline: Sendable {
             }
             var jobs: [Job] = []
             if let held = state.echoGate?.flush() {
-                onAudio?(.mic, state.micForSaving(held.samples, at: held.position), held.position)
-                jobs += state.segment(.mic, held.samples, at: held.position).map { Job(source: .mic, utterance: $0) }
+                let mic = state.denoise(held.samples, at: held.position)
+                onAudio?(.mic, state.micForSaving(mic.samples, at: mic.position), mic.position)
+                jobs += state.segment(.mic, mic.samples, at: mic.position).map { Job(source: .mic, utterance: $0) }
             }
             for source in AudioSource.allCases {
                 if let last = state.segmenters[source]?.flush() { jobs.append(Job(source: source, utterance: last)) }

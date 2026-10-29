@@ -19,6 +19,16 @@ struct InventedLinesReplay {
         // TEST_RUNNER_REPLAY_GAIN_DB: louder, to reach the segmenter's threshold as the live mic did.
         let gain = pow(10, Float(ProcessInfo.processInfo.environment["REPLAY_GAIN_DB"].flatMap(Double.init) ?? 0) / 20)
         let samples = try MonoResampler().convert(buffer).map { $0 * gain }
+        // How much steady noise the mic's noise suppression takes off this recording.
+        if let suppressor = NoiseSuppressor() {
+            let out = stride(from: 0, to: samples.count, by: 1_600).flatMap { suppressor.process(Array(samples[$0..<min($0 + 1_600, samples.count)]), at: $0).samples }
+            func db(_ x: [Float]) -> Double { 10 * log10(max(x.reduce(0) { $0 + Double($1 * $1) } / Double(max(x.count, 1)), 1e-12)) }
+            print(String(format: "replay: noise suppression %.1f → %.1f dB", db(samples), db(out)))
+            for second in stride(from: 0, to: min(samples.count, out.count) / 16_000, by: 2) {
+                let r = (second * 16_000)..<min((second + 2) * 16_000, out.count)
+                print(String(format: "replay:   %2d s: %.1f → %.1f dB", second, db(Array(samples[r])), db(Array(out[r]))))
+            }
+        }
         let model = try #require(SpeechModel.catalog.first(where: ModelStore.isComplete))
         let transcriber = try await Transcriber.load(model)
 
