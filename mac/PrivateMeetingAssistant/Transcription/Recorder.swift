@@ -37,8 +37,9 @@ final class Recorder {
     @ObservationIgnored private let videoMic = VideoMicBox()
     /// Videos being finished (mic mixed in, cut down), which stopping waits for.
     @ObservationIgnored private var videoMixes: [Task<Void, Never>] = []
-    /// Whether a video is being finished.
-    private(set) var isMixingVideo = false
+    /// Videos being finished (mic mixed in, cut down), shown as such in the transcript.
+    private(set) var finishingVideos: Set<URL> = []
+    var isMixingVideo: Bool { !finishingVideos.isEmpty }
     /// The recorded app's windows, while asking which one has the video (none: not asking).
     private(set) var videoWindowChoices: [VideoWindowChoice] = []
     /// How to record the video once its window is chosen.
@@ -379,7 +380,7 @@ final class Recorder {
     /// of it, and/or cuts it down to where the video is in the window, smaller.
     /// `cutTop`: cut size, taking at most this share of the height off the top.
     private func finishVideo(_ url: URL, mic take: VideoMicRecorder?, cutTop: Double?, videoStartMs: Int, meetingID: Int64) {
-        isMixingVideo = true
+        finishingVideos.insert(url)
         let videoMic = videoMic
         let task = Task { [weak self] in
             var mic: VideoSoundMixer.Mic?
@@ -408,7 +409,7 @@ final class Recorder {
             }
             withExtendedLifetime(take) {}
             guard let self else { return }
-            self.isMixingVideo = false
+            self.finishingVideos.remove(url)
             self.scheduleFileWrite(meetingID)
         }
         videoMixes.append(task)

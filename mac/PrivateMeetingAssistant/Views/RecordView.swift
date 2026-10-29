@@ -882,7 +882,10 @@ private struct LiveRecordingView: View {
                         case .screenshot(let shot):
                             ScreenshotRow(shot: shot, caption: screenshotCaption)
                         case .video(let video):
-                            VideoRow(video: video, isRecording: recorder.isRecordingVideo && video == recorder.videos.last)
+                            VideoRow(
+                                video: video, isRecording: recorder.isRecordingVideo && video == recorder.videos.last,
+                                isFinishing: recorder.finishingVideos.contains(video.url)
+                            )
                         }
                     }
                     ForEach(liveSources, id: \.self) { source in
@@ -1338,6 +1341,8 @@ struct ScreenshotRow: View {
 struct VideoRow: View {
     let video: MeetingScreenshot
     var isRecording = false
+    /// Having the mic mixed in or being cut down: it opens once that's done.
+    var isFinishing = false
     var leadingInset: CGFloat = 46
     @State private var image: CGImage?
 
@@ -1352,28 +1357,35 @@ struct VideoRow: View {
                         Image(decorative: image, scale: 1)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
+                            .opacity(isFinishing ? 0.45 : 1)
                     }
-                    Image(systemName: isRecording ? "record.circle" : "play.circle.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(isRecording ? AnyShapeStyle(.red) : AnyShapeStyle(.white.opacity(0.9)))
-                        .shadow(radius: 3)
-                        .symbolEffect(.pulse, isActive: isRecording)
+                    if isFinishing {
+                        ProgressView().controlSize(.regular)
+                    } else {
+                        Image(systemName: isRecording ? "record.circle" : "play.circle.fill")
+                            .font(.system(size: 30))
+                            .foregroundStyle(isRecording ? AnyShapeStyle(.red) : AnyShapeStyle(.white.opacity(0.9)))
+                            .shadow(radius: 3)
+                            .symbolEffect(.pulse, isActive: isRecording)
+                    }
                 }
                 .frame(width: 168, height: 96)
                 .clipShape(.rect(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(isRecording ? "Recording video…" : "Video").font(.callout.weight(.semibold))
+                    Text(isRecording ? "Recording video…" : isFinishing ? "Finishing video…" : "Video").font(.callout.weight(.semibold))
                     Text(TranscriptExport.timestamp(video.atMs)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
             }
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .disabled(isRecording)
+        .disabled(isRecording || isFinishing)
         .padding(.leading, leadingInset)
-        .help(isRecording ? "Recording; it opens once you stop the video" : "Open the video")
-        .task(id: "\(video.url.path) \(isRecording)") {
+        .help(isRecording ? "Recording; it opens once you stop the video"
+              : isFinishing ? "Adding your mic or cutting it down; it opens once that's done" : "Open the video")
+        // Again once it's finished: the picture may have been cut down.
+        .task(id: "\(video.url.path) \(isRecording) \(isFinishing)") {
             guard !isRecording, let thumbnail = await VideoThumbnail.ensure(for: video.url) else { return }
             image = await Task.detached { ScreenCapture.thumbnail(of: thumbnail, maxPixels: 400) }.value
         }
