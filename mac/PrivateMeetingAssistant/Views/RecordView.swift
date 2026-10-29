@@ -805,6 +805,7 @@ private struct LiveRecordingView: View {
                     .onSubmit { renameMeeting() }
                     .onChange(of: editingTitle) { if !editingTitle { renameMeeting() } }
                     .onChange(of: title, initial: true) { if !editingTitle { titleDraft = title } }
+                    .editingOutline(editingTitle)
                     .help("Rename the meeting")
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {

@@ -78,6 +78,7 @@ struct MeetingView: View {
                             .onSubmit { rename() }
                             .onChange(of: editingTitle) { if !editingTitle { rename() } }
                             .fixedSize()
+                            .editingOutline(editingTitle)
                         Button("Rename", systemImage: "pencil") { editingTitle = true }
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)

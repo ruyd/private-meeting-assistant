@@ -80,3 +80,28 @@ struct NotesEditor: View {
         library.saveNotes(meetingID, text)
     }
 }
+
+/// A field that looks like plain text until it's being edited, then shows an accent border, so it's
+/// clear an edit is under way (meeting names). The padding is always there so nothing shifts.
+struct EditingOutline: ViewModifier {
+    let isEditing: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(isEditing ? AnyShapeStyle(Theme.surface) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .opacity(isEditing ? 1 : 0)
+            )
+            .animation(.easeOut(duration: 0.15), value: isEditing)
+            // Line the text up with what's below it, as if there were no padding.
+            .padding(.horizontal, -8)
+    }
+}
+
+extension View {
+    func editingOutline(_ isEditing: Bool) -> some View { modifier(EditingOutline(isEditing: isEditing)) }
+}
