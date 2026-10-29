@@ -234,7 +234,7 @@ enum MeetingFiles {
         }
         if !s.actionItems.isEmpty {
             out += "## Action items\n\n" + s.actionItems.map { a in
-                "- [\(a.done ? "x" : " ")] \(a.text)\(a.owner.map { " — *\($0)*" } ?? "")\n"
+                "- [\(a.done ? "x" : " ")] \(a.text)\(a.shownOwner.map { " — *\($0)*" } ?? "")\n"
             }.joined() + "\n"
         }
         return out

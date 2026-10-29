@@ -26,6 +26,24 @@ struct SummarizerTests {
         #expect(Summarizer.wordCount("Okay, this is... — ✓ 42") == 4)
     }
 
+    /// Models copy the prompt's "Participant N" when they can't tell who owns a task: no owner
+    /// then, and none shown for summaries saved with one.
+    @Test func placeholderOwnersAreDropped() {
+        let raw = MeetingSummary(summary: "S", actionItems: [
+            .init(text: "Review the map", owner: "Participant N"),
+            .init(text: "Send the deck", owner: "Participant 2"),
+            .init(text: "Book the room", owner: "Participant 7"),
+            .init(text: "Write notes", owner: "Me"),
+            .init(text: "Call the vendor", owner: "Unknown"),
+        ])
+        let present: Set<String> = ["participant 2", "me"]
+        let cleaned = Summarizer.cleaned(raw) { present.contains($0.lowercased()) }
+        #expect(cleaned.actionItems.map(\.owner) == [nil, "Participant 2", nil, "Me", nil])
+        // Saved before owners were checked: shown without one.
+        #expect(MeetingSummary.ActionItem(text: "Review the map", owner: "Participant N").shownOwner == nil)
+        #expect(MeetingSummary.ActionItem(text: "Send the deck", owner: "Priya").shownOwner == "Priya")
+    }
+
     @Test func chunksRespectTheLimit() {
         let text = (0..<100).map { "line \($0) " + String(repeating: "x", count: 50) }.joined(separator: "\n")
         let chunks = Summarizer.chunkLines(text, max: 500)

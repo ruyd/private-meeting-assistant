@@ -8,6 +8,10 @@ struct MeetingSummary: Codable, Hashable, Sendable {
         var owner: String?
         var done: Bool
 
+        /// Who to show as the owner: none for a stand-in the model wrote when it couldn't tell
+        /// ("Participant N", "Unknown"), as summaries written before owners were checked can have.
+        var shownOwner: String? { owner.flatMap { MeetingSummary.isPlaceholderOwner($0) ? nil : $0 } }
+
         init(text: String, owner: String? = nil, done: Bool = false) {
             self.text = text
             self.owner = owner
@@ -20,6 +24,14 @@ struct MeetingSummary: Codable, Hashable, Sendable {
             owner = try c.decodeIfPresent(String.self, forKey: .owner)
             done = try c.decodeIfPresent(Bool.self, forKey: .done) ?? false
         }
+    }
+
+    /// Owners that only stand in for "no one in particular": the examples the prompt gives
+    /// ("Participant N") and the usual ways of saying unknown.
+    static func isPlaceholderOwner(_ owner: String) -> Bool {
+        let o = owner.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return o.isEmpty || ["null", "none", "nil", "n/a", "na", "unknown", "unclear", "unassigned", "tbd", "-", "—",
+                             "participant n", "participant x", "speaker", "someone", "a name", "name"].contains(o)
     }
 
     var summary: String

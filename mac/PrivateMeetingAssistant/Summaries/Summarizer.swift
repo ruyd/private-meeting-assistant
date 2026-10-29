@@ -118,8 +118,19 @@ struct Summarizer {
             material += "\n\nNotes \"Me\" typed during the meeting (use them to weigh what mattered; don't repeat them verbatim):\n\(typed.prefix(2_000))"
         }
 
+        // An owner must be someone in this meeting: "Me", a voice's label or name, an invited
+        // participant, or a name said in it. Models otherwise copy the prompt's "Participant N".
+        let people = Set(segments.map { ($0.speaker.isEmpty ? $0.source.speaker : $0.speaker).lowercased() } + ["me"]
+            + participants.map { $0.displayName.lowercased() })
+        let said = segments.map(\.text).joined(separator: " ").lowercased()
+        let isPresent: (String) -> Bool = { owner in
+            let o = owner.lowercased()
+            return people.contains(o) || o.split(separator: " ").contains { people.contains(String($0)) }
+                || (!o.hasPrefix("participant ") && said.contains(o))
+        }
+
         if case .apple = backend {
-            return try await Self.cleaned(appleSummary(material, speakerNote: speakerNote))
+            return try await Self.cleaned(appleSummary(material, speakerNote: speakerNote), owner: isPresent)
         }
         let raw = try await chat("""
             You are a meeting assistant. \(speakerNote)
@@ -131,7 +142,7 @@ struct Summarizer {
 
             \(material)
             """, format: Self.schema, unload: true)
-        return try Self.parse(raw)
+        return Self.cleaned(try Self.parse(raw), owner: isPresent)
     }
 
     private func takeNotes(_ parts: [String], of what: String, speakerNote: String) async throws -> [String] {
@@ -304,14 +315,15 @@ struct Summarizer {
         return cleaned(summary)
     }
 
-    /// Drops empty action items and turns blank or "null" owners into none.
-    static func cleaned(_ summary: MeetingSummary) -> MeetingSummary {
+    /// Drops empty action items, and owners that are blank, a stand-in ("null", "Participant N") or,
+    /// given `owner`, not someone in the meeting.
+    static func cleaned(_ summary: MeetingSummary, owner isKnown: (String) -> Bool = { _ in true }) -> MeetingSummary {
         var summary = summary
         summary.actionItems = summary.actionItems
             .filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
             .map { item in
                 let owner = item.owner?.trimmingCharacters(in: .whitespaces)
-                let unclear = owner == nil || owner!.isEmpty || owner!.lowercased() == "null"
+                let unclear = owner.map { MeetingSummary.isPlaceholderOwner($0) || !isKnown($0) } ?? true
                 return MeetingSummary.ActionItem(text: item.text, owner: unclear ? nil : owner, done: false)
             }
         return summary

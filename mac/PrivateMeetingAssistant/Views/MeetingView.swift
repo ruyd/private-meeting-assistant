@@ -247,7 +247,7 @@ private struct SummarySection: View {
                             get: { item.done },
                             set: { library.setActionItem(meeting.id, index: index, done: $0) }
                         )) {
-                            Text(item.text) + Text(item.owner.map { " — \($0)" } ?? "").foregroundStyle(.secondary)
+                            Text(item.text) + Text(item.shownOwner.map { " — \($0)" } ?? "").foregroundStyle(.secondary)
                         }
                         .toggleStyle(.checkbox)
                     }
