@@ -102,7 +102,7 @@ struct WindowRecorderTests {
         let url = FileManager.default.temporaryDirectory.appending(path: "video-\(UUID().uuidString)/00.00.05.mp4")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
-        let recorder = try await WindowRecorder.start(bundleID: bundleID, appName: "Test host", micUID: nil, to: url)
+        let recorder = try await WindowRecorder.start(bundleID: bundleID, appName: "Test host", to: url)
         try await Task.sleep(for: .seconds(2))
         await recorder.stop()
         #expect(recorder.failure == nil)

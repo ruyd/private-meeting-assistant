@@ -32,6 +32,12 @@ final class Recorder {
     private(set) var isStartingVideo = false
     private(set) var videos: [MeetingScreenshot] = []
     @ObservationIgnored private var windowRecorder: WindowRecorder?
+    /// The echo-removed mic while a "Record video + mic" video records.
+    @ObservationIgnored private let videoMic = VideoMicBox()
+    /// Videos having the mic mixed in, which stopping waits for.
+    @ObservationIgnored private var videoMixes: [Task<Void, Never>] = []
+    /// Whether a video is having your microphone mixed in.
+    private(set) var isMixingVideo = false
     /// The audio file, once saving audio was first turned on; the capture threads write to it.
     @ObservationIgnored private let audioFile = AudioFileBox()
     /// Words as they're spoken, per source, until Whisper's line for that stretch arrives
@@ -133,9 +139,10 @@ final class Recorder {
             voiceprinter: voiceprinter,
             identifySpeakers: capture.captureSystemAudio ? [.system] : [.mic],
             // The saved audio gets the mic after echo removal, like the transcript.
-            onAudio: { [audioFile, live] source, samples, position in
+            onAudio: { [audioFile, live, videoMic] source, samples, position in
                 audioFile.append(samples, from: source, at: position)
                 live.append(samples, from: source, at: position)
+                if source == .mic { videoMic.append(samples, at: position) }
             },
             onLine: { [undelivered] line in
                 undelivered.add(1)
@@ -267,8 +274,9 @@ final class Recorder {
     /// microphone only), like screenshots.
     var canRecordVideo: Bool { screenshotApp != nil }
 
-    /// Starts recording the app's window as video, or stops the recording in progress.
-    func toggleVideo() async {
+    /// Starts recording the app's window as video, with your (echo-removed) voice mixed in when
+    /// `withMic`, or stops the recording in progress.
+    func toggleVideo(withMic: Bool = false) async {
         if let windowRecorder {
             await windowRecorder.stop()
             return
@@ -281,13 +289,27 @@ final class Recorder {
         let atMs = Int(Date().timeIntervalSince(startedAt) * 1000)
         do {
             let url = try MeetingFiles.newVideo(at: atMs, in: folder)
-            let recorder = try await WindowRecorder.start(bundleID: app.bundleID, appName: app.name, micUID: capture.micDeviceUID, to: url)
-            recorder.onStop = { [weak self] failure in
+            let take = withMic ? try VideoMicRecorder() : nil
+            videoMic.set(take)
+            let requestedAt = mach_absolute_time()
+            let recorder: WindowRecorder
+            do {
+                recorder = try await WindowRecorder.start(bundleID: app.bundleID, appName: app.name, to: url)
+            } catch {
+                videoMic.set(nil)
+                throw error
+            }
+            recorder.onStop = { [weak self, weak recorder] failure in
                 guard let self else { return }
                 self.windowRecorder = nil
                 self.isRecordingVideo = false
                 if let failure { self.error = "The video stopped: \(failure)" }
-                self.scheduleFileWrite(meetingID)
+                if let take {
+                    let startedAt = recorder?.startedHostTime ?? requestedAt
+                    self.mixMic(take, into: url, videoStartMs: self.meetingMs(atHostTime: startedAt), meetingID: meetingID)
+                } else {
+                    self.scheduleFileWrite(meetingID)
+                }
             }
             windowRecorder = recorder
             isRecordingVideo = true
@@ -295,6 +317,38 @@ final class Recorder {
         } catch {
             self.error = "Couldn't record video: \(error.localizedDescription)"
         }
+    }
+
+    /// Mixes the mic taken during a video into it, once echo removal has handed over the last of it.
+    private func mixMic(_ take: VideoMicRecorder, into url: URL, videoStartMs: Int, meetingID: Int64) {
+        isMixingVideo = true
+        let videoMic = videoMic
+        let task = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            videoMic.set(nil)
+            if let first = take.finish() {
+                let mixed = url.deletingLastPathComponent().appending(path: ".mixing-" + url.lastPathComponent)
+                let micStartsAt = Double(first) / MonoResampler.sampleRate - Double(videoStartMs) / 1000
+                do {
+                    try await Task.detached(priority: .userInitiated) {
+                        try await VideoSoundMixer.mix(video: url, mic: take.url, micStartsAt: micStartsAt, into: mixed)
+                        _ = try FileManager.default.replaceItemAt(url, withItemAt: mixed)
+                    }.value
+                } catch {
+                    try? FileManager.default.removeItem(at: mixed)
+                    self?.error = error.localizedDescription
+                }
+            }
+            guard let self else { return }
+            self.isMixingVideo = false
+            self.scheduleFileWrite(meetingID)
+        }
+        videoMixes.append(task)
+    }
+
+    /// Meeting milliseconds at a host time.
+    private func meetingMs(atHostTime time: UInt64) -> Int {
+        time > startHostTime ? Int(Double(time - startHostTime) * Self.hostTicksPerMs) : 0
     }
 
     /// Loads the model ahead of time, so starting a recording doesn't wait for it.
@@ -336,6 +390,9 @@ final class Recorder {
         // Transcription hands the audio file the mic audio echo removal was still holding back.
         await pipeline.finish()
         await audioFile.recorder?.finish()
+        // A video stopped with the recording gets the mic it took (needs the pipeline's last audio).
+        for mix in videoMixes { await mix.value }
+        videoMixes = []
         audioFile.set(nil)
         isSavingAudio = false
         // The last lines are still hopping to the main actor; let them land before the transcript is
@@ -495,6 +552,14 @@ private final class DeliveryCount: Sendable {
 }
 
 /// The audio file being written, swapped in from the main actor and fed from capture threads.
+/// The mic take of a "Record video + mic" video, swapped in from the main actor and fed from the
+/// transcription pipeline.
+private final class VideoMicBox: Sendable {
+    private let value = Mutex<VideoMicRecorder?>(nil)
+    func set(_ take: VideoMicRecorder?) { value.withLock { $0 = take } }
+    func append(_ samples: [Float], at position: Int) { value.withLock { $0 }?.append(samples, at: position) }
+}
+
 private final class AudioFileBox: Sendable {
     private let value = Mutex<AudioFileRecorder?>(nil)
     var recorder: AudioFileRecorder? { value.withLock { $0 } }

@@ -4,9 +4,13 @@ import ScreenCaptureKit
 
 private let log = Logger(subsystem: "dev.ruy.private-meeting-assistant", category: "video")
 
-/// Records the window of the app being recorded as an .mp4, with that app's sound and the microphone,
-/// via ScreenCaptureKit. Like screenshots, it only ever captures that one window, never the rest of
-/// the screen, and needs the Screen Recording permission.
+/// Records the window of the app being recorded as an .mp4, with that app's sound, via ScreenCaptureKit.
+/// Like screenshots, it only ever captures that one window, never the rest of the screen, and needs
+/// the Screen Recording permission.
+///
+/// Never the microphone: ScreenCaptureKit's is the raw mic, which hears the app through the
+/// speakers, so the video had the call twice, a moment apart. Your voice is mixed in afterwards
+/// from the echo-removed mic instead (`VideoSoundMixer`).
 @MainActor
 final class WindowRecorder {
     let url: URL
@@ -17,11 +21,12 @@ final class WindowRecorder {
     private var isFinished = false
     /// Set if the recording stopped by itself (the window closed, an error).
     private(set) var failure: String?
+    /// When the file's timeline begins (host time), once ScreenCaptureKit has started writing it.
+    private(set) var startedHostTime: UInt64?
     var onStop: ((String?) -> Void)?
 
-    /// Starts recording the app's main window into `url`. `micUID` picks the microphone (nil: the
-    /// system default).
-    static func start(bundleID: String, appName: String, micUID: String?, to url: URL) async throws -> WindowRecorder {
+    /// Starts recording the app's main window into `url`.
+    static func start(bundleID: String, appName: String, to url: URL) async throws -> WindowRecorder {
         guard ScreenCapture.hasPermission else {
             CGRequestScreenCaptureAccess()
             throw ScreenCaptureError.permission
@@ -39,8 +44,6 @@ final class WindowRecorder {
         config.showsCursor = true
         config.capturesAudio = true
         config.excludesCurrentProcessAudio = true
-        config.captureMicrophone = true
-        config.microphoneCaptureDeviceID = micUID
 
         let recording = SCRecordingOutputConfiguration()
         recording.outputURL = url
@@ -59,6 +62,7 @@ final class WindowRecorder {
         stream = SCStream(filter: filter, configuration: config, delegate: nil)
         output = SCRecordingOutput(configuration: recording, delegate: events)
         events.onFinish = { [weak self] error in Task { @MainActor in self?.didFinish(error) } }
+        events.onStart = { [weak self] hostTime in Task { @MainActor in self?.startedHostTime = hostTime } }
     }
 
     /// Stops and waits until the file is complete.
@@ -86,6 +90,11 @@ final class WindowRecorder {
     /// Receives the recording's events, which arrive off the main thread.
     private final class Events: NSObject, SCRecordingOutputDelegate, @unchecked Sendable {
         var onFinish: (@Sendable (String?) -> Void)?
+        var onStart: (@Sendable (UInt64) -> Void)?
+
+        func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {
+            onStart?(mach_absolute_time())
+        }
 
         func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
             onFinish?(nil)

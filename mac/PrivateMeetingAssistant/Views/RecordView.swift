@@ -969,26 +969,7 @@ private struct LiveRecordingView: View {
             .help(recorder.screenshotApp.map { "Save a screenshot of \($0.name)'s window in the meeting's folder (⇧⌘S)" }
                 ?? "Screenshots only capture the app you're recording; pick one under Sources next time")
 
-            Button {
-                Task { await recorder.toggleVideo() }
-            } label: {
-                HStack(spacing: 8) {
-                    if recorder.isStartingVideo {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: recorder.isRecordingVideo ? "record.circle" : "video")
-                            .symbolEffect(.pulse, isActive: recorder.isRecordingVideo)
-                    }
-                    Text(recorder.isRecordingVideo ? "Recording video" : "Record video")
-                }
-            }
-            .buttonStyle(BarButtonStyle(activeTint: recorder.isRecordingVideo ? .red : nil))
-            .keyboardShortcut("v", modifiers: [.command, .shift])
-            .disabled(recorder.phase != .recording || !recorder.canRecordVideo || recorder.isStartingVideo)
-            .help(recorder.isRecordingVideo
-                ? "Stop the video (⇧⌘V); the recording goes on"
-                : recorder.screenshotApp.map { "Record \($0.name)'s window with its sound and your microphone, into the meeting's folder (⇧⌘V)" }
-                    ?? "Video records the app you're recording; pick one under Sources next time")
+            VideoButton(recorder: recorder)
 
             Button {
                 recorder.setSavingAudio(!recorder.isSavingAudio)
@@ -1028,6 +1009,83 @@ private struct LiveRecordingView: View {
         if navigation.selection == .recorder, let id = recorder.meetingID {
             navigation.open(MeetingRoute(meetingID: id))
         }
+    }
+}
+
+/// Record video, as a split button: the main part starts a video the way chosen last (the app's
+/// sound, or with your microphone mixed in after echo removal) or stops one; the chevron picks.
+private struct VideoButton: View {
+    let recorder: Recorder
+    @AppStorage("videoWithMic") private var withMic = false
+
+    private var title: String {
+        if recorder.isRecordingVideo { return "Recording video" }
+        if recorder.isMixingVideo { return "Adding your mic…" }
+        return withMic ? "Record video + mic" : "Record video"
+    }
+
+    var body: some View {
+        let active = recorder.isRecordingVideo
+        let enabled = recorder.phase == .recording && recorder.canRecordVideo && !recorder.isStartingVideo
+        HStack(spacing: 0) {
+            Button {
+                Task { await recorder.toggleVideo(withMic: withMic) }
+            } label: {
+                HStack(spacing: 8) {
+                    if recorder.isStartingVideo || recorder.isMixingVideo && !active {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: active ? "record.circle" : "video")
+                            .symbolEffect(.pulse, isActive: active)
+                    }
+                    Text(title)
+                }
+                .padding(.leading, 18)
+                .padding(.trailing, 12)
+                .frame(maxHeight: .infinity)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("v", modifiers: [.command, .shift])
+            .help(active
+                ? "Stop the video (⇧⌘V); the recording goes on"
+                : recorder.screenshotApp.map { app in
+                    withMic
+                        ? "Record \(app.name)'s window with its sound and your voice (echo removed), into the meeting's folder (⇧⌘V)"
+                        : "Record \(app.name)'s window with its sound, into the meeting's folder (⇧⌘V)"
+                } ?? "Video records the app you're recording; pick one under Sources next time")
+
+            Rectangle().fill(active ? Color.red.opacity(0.5) : Theme.stroke).frame(width: 1).padding(.vertical, 10)
+
+            Menu {
+                Picker("Video sound", selection: $withMic) {
+                    Text("Record video").tag(false)
+                    Text("Record video + mic").tag(true)
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .padding(.horizontal, 12)
+            .frame(maxHeight: .infinity)
+            .contentShape(.rect)
+            .disabled(active)
+            .help("Record the app's sound only, or with your microphone too")
+        }
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(active ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
+        .frame(height: 44)
+        .background(active ? AnyShapeStyle(Color.red.opacity(0.12)) : AnyShapeStyle(Theme.surface), in: .rect(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(active ? AnyShapeStyle(Color.red.opacity(0.8)) : AnyShapeStyle(Theme.stroke), lineWidth: active ? 1.5 : 1)
+        )
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.45)
     }
 }
 
