@@ -28,6 +28,7 @@
 		350ACD33617A3386F26C67E9 /* WindowRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A64DD5053FBB9482E27BD5 /* WindowRecorder.swift */; };
 		3971E29F15B3B3C7D02EE7B1 /* EchoCanceller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13304DAB75AE7345800AA97B /* EchoCanceller.swift */; };
 		3C7DAF67E0C918F868B33AFB /* LowCutFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AD1C0A7696B2D59E65764CE /* LowCutFilter.swift */; };
+		41BF40D6703825512A17A67A /* AudioPlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EDA9F6F7BCDF8FCE98D1188 /* AudioPlayerTests.swift */; };
 		4CF1DBF34D6FEAFE64A1B327 /* MeetingIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70505B183B378F0FDD6EFF20 /* MeetingIntegrationTests.swift */; };
 		4FBB6C20FA37789F66E5C1C5 /* VideoArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CBB10AAB9614ECEAB0B5FF3 /* VideoArea.swift */; };
 		50D553444DA83B457CB02CE3 /* NoiseSuppressorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD2A6E648235A00D3DA977F /* NoiseSuppressorTests.swift */; };
@@ -173,6 +174,7 @@
 		9071423B869C9AC3F3D7D6B6 /* ModalChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalChrome.swift; sourceTree = "<group>"; };
 		931F9ED8C081AF78A8DF155E /* VideoWindowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoWindowTests.swift; sourceTree = "<group>"; };
 		9AD7B8E7779BDD8FD8787BD4 /* AudioChunk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioChunk.swift; sourceTree = "<group>"; };
+		9EDA9F6F7BCDF8FCE98D1188 /* AudioPlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerTests.swift; sourceTree = "<group>"; };
 		A37371385834E310668676DB /* CaptureSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureSelfTest.swift; sourceTree = "<group>"; };
 		A4800790429C1E27EE8437AD /* SummaryEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryEngine.swift; sourceTree = "<group>"; };
 		A8EF82986BA519224B3E7089 /* MeetingSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingSummary.swift; sourceTree = "<group>"; };
@@ -431,6 +433,7 @@
 			isa = PBXGroup;
 			children = (
 				822E45F09FC584EED074FF75 /* AudioFileRecorderTests.swift */,
+				9EDA9F6F7BCDF8FCE98D1188 /* AudioPlayerTests.swift */,
 				12A1CD15800C810E7FF3710F /* EchoGateTests.swift */,
 				FB6C8B1A7026B4B5813BF953 /* EchoReplayTests.swift */,
 				29256E26059FDFA19E9CE370 /* EchoTextTests.swift */,
@@ -569,6 +572,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8AA6E2752F470D4750B1236E /* AudioFileRecorderTests.swift in Sources */,
+				41BF40D6703825512A17A67A /* AudioPlayerTests.swift in Sources */,
 				ED5C9056227CC72D62BBD0DB /* EchoGateTests.swift in Sources */,
 				54F618C04BD5BDD54375251D /* EchoReplayTests.swift in Sources */,
 				B55827542D3B58ADDE4D228D /* EchoTextTests.swift in Sources */,
