@@ -97,9 +97,10 @@ extension CaptureSelfTest {
 
 extension CaptureSelfTest {
     /// `--transcribe-test <seconds> <output-dir> [--model <id>] [--app <bundle-id>] [--keep-echo]
-    /// [--video | --video-mic]`: records with live transcription and writes transcript.json (lines in
+    /// [--video | --video-mic] [--cut]`: records with live transcription and writes transcript.json (lines in
     /// order, with timing). `--video` records the app's window from 2 s in until 2 s before the end
-    /// (`--video-mic` with your voice mixed in), into the output folder's Meetings.
+    /// (`--video-mic` with your voice mixed in, `--cut` cut down to the video in it), into the output
+    /// folder's Meetings.
     @MainActor
     static func transcribe(seconds: Double, to dir: URL, args: [String]) async {
         let modelID = args.firstIndex(of: "--model").flatMap { args.count > $0 + 1 ? args[$0 + 1] : nil }
@@ -116,7 +117,7 @@ extension CaptureSelfTest {
         log.notice("transcribe test: started in \(ContinuousClock.now - clock, privacy: .public), phase \(String(describing: recorder.phase), privacy: .public), error \(recorder.error ?? "none", privacy: .public)")
         if args.contains("--video") || args.contains("--video-mic"), seconds > 5 {
             try? await Task.sleep(for: .seconds(2))
-            await recorder.toggleVideo(withMic: args.contains("--video-mic"))
+            await recorder.toggleVideo(withMic: args.contains("--video-mic"), cutSize: args.contains("--cut"))
             log.notice("transcribe test: video \(recorder.isRecordingVideo ? "recording" : "didn't start: \(recorder.error ?? "")", privacy: .public)")
             try? await Task.sleep(for: .seconds(seconds - 4))
             await recorder.toggleVideo()

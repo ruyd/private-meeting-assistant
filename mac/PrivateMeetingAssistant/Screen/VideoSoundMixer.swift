@@ -1,12 +1,30 @@
 import AVFoundation
+import CoreImage
 import OSLog
 
 private let log = Logger(subsystem: "dev.ruy.private-meeting-assistant", category: "video")
 
-/// Mixes the echo-removed microphone into a recorded video ("Record video + mic"): the picture is
-/// copied as it is, the app's sound (48 kHz stereo) and the mic (16 kHz mono, from
-/// `VideoMicRecorder`) are mixed and encoded as the video's sound.
+/// Finishes a recorded video. "Record video + mic": the app's sound (48 kHz stereo) and the
+/// echo-removed mic (16 kHz mono, from `VideoMicRecorder`) are mixed and encoded as the video's sound.
+/// "Cut size": the picture is cropped to where the video is (`VideoArea`), scaled to fit 1280×720
+/// and encoded at 2.5 Mbit/s, instead of copied as it is (ScreenCaptureKit's full window, 2406×2166
+/// at 30–40 Mbit/s for a browser on this Mac).
 enum VideoSoundMixer {
+    /// The mic to mix in, and where its first sample plays in the video (seconds; negative: before).
+    struct Mic {
+        let url: URL
+        let startsAt: Double
+    }
+
+    /// How to re-encode the picture.
+    struct Picture {
+        /// The part to keep, as fractions of the frame with the origin at the top left; nil: all.
+        var crop: CGRect?
+        var maxWidth = 1_280
+        var maxHeight = 720
+        var bitRate = 2_500_000
+    }
+
     static let rate = 48_000
     private static let channels = 2
     private static let block = 1_024
@@ -16,7 +34,7 @@ enum VideoSoundMixer {
         var errorDescription: String? {
             switch self {
             case .noPicture: "The video has no picture."
-            case .cantWrite(let why): "Couldn't add your microphone to the video: \(why)"
+            case .cantWrite(let why): "Couldn't finish the video: \(why)"
             }
         }
     }
@@ -24,15 +42,25 @@ enum VideoSoundMixer {
     /// Writes `video` with `mic` mixed into its sound to `output`. The mic file's first sample plays
     /// at `micStartsAt` seconds into the video (negative: before it began).
     static func mix(video: URL, mic: URL, micStartsAt: Double, into output: URL) async throws {
+        try await rewrite(video: video, mic: Mic(url: mic, startsAt: micStartsAt), picture: nil, into: output)
+    }
+
+    /// Writes `video` to `output` with `mic` mixed into its sound (if any) and its picture re-encoded
+    /// as `picture` says (nil: copied as it is).
+    static func rewrite(video: URL, mic: Mic?, picture: Picture?, into output: URL) async throws {
         let asset = AVURLAsset(url: video)
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else { throw Failure.noPicture }
         let appTrack = try await asset.loadTracks(withMediaType: .audio).first
         let duration = try await asset.load(.duration).seconds
         let hint = try await videoTrack.load(.formatDescriptions).first
         let transform = try await videoTrack.load(.preferredTransform)
+        let natural = try await videoTrack.load(.naturalSize)
+        let resize = picture.map { Resize($0, from: natural) }
 
         let reader = try AVAssetReader(asset: asset)
-        let pictures = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: nil)
+        let pictures = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: resize.map { _ in
+            [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        })
         reader.add(pictures)
         var appSound: AVAssetReaderTrackOutput?
         if let appTrack {
@@ -47,7 +75,14 @@ enum VideoSoundMixer {
 
         try? FileManager.default.removeItem(at: output)
         let writer = try AVAssetWriter(outputURL: output, fileType: .mp4)
-        let pictureInput = AVAssetWriterInput(mediaType: .video, outputSettings: nil, sourceFormatHint: hint)
+        let pictureInput = resize.map { r in
+            AVAssetWriterInput(mediaType: .video, outputSettings: [
+                AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: r.width, AVVideoHeightKey: r.height,
+                AVVideoCompressionPropertiesKey: [
+                    AVVideoAverageBitRateKey: r.bitRate, AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                ],
+            ])
+        } ?? AVAssetWriterInput(mediaType: .video, outputSettings: nil, sourceFormatHint: hint)
         pictureInput.transform = transform
         pictureInput.expectsMediaDataInRealTime = false
         let soundInput = AVAssetWriterInput(mediaType: .audio, outputSettings: [
@@ -61,9 +96,12 @@ enum VideoSoundMixer {
         guard writer.startWriting() else { throw Failure.cantWrite(writer.error?.localizedDescription ?? "writing") }
         writer.startSession(atSourceTime: .zero)
 
-        let sound = try SoundSource(app: appSound, mic: mic, micStartsAt: micStartsAt, frames: Int(duration * Double(rate)))
+        let sound = try SoundSource(app: appSound, mic: mic, frames: Int(duration * Double(rate)))
         // Each input is fed from its own queue; its source is only ever read there.
-        let picturePump = Pump(input: pictureInput) { pictures.copyNextSampleBuffer() }
+        let picturePump = Pump(input: pictureInput) {
+            guard let sample = pictures.copyNextSampleBuffer() else { return nil }
+            return resize.map { $0.apply(to: sample) } ?? sample
+        }
         let soundPump = Pump(input: soundInput) { sound.next() }
         async let picturesDone: Void = picturePump.run(queue: "video-mix-picture")
         async let soundDone: Void = soundPump.run(queue: "video-mix-sound")
@@ -71,6 +109,55 @@ enum VideoSoundMixer {
         if reader.status == .failed { throw Failure.cantWrite(reader.error?.localizedDescription ?? "reading") }
         await writer.finishWriting()
         if writer.status != .completed { throw Failure.cantWrite(writer.error?.localizedDescription ?? "writing") }
+    }
+
+    /// Crops and scales decoded frames for re-encoding.
+    private final class Resize: @unchecked Sendable {
+        let width: Int
+        let height: Int
+        let bitRate: Int
+        /// The part of the frame kept, in Core Image's coordinates (origin at the bottom left).
+        private let source: CGRect
+        private let context = CIContext()
+        private var pool: CVPixelBufferPool?
+        private var format: CMVideoFormatDescription?
+
+        init(_ picture: Picture, from natural: CGSize) {
+            let crop = picture.crop ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+            let x = (crop.minX * natural.width).rounded(), w = (crop.width * natural.width).rounded()
+            let h = (crop.height * natural.height).rounded()
+            let y = (natural.height - (crop.minY * natural.height).rounded() - h)
+            source = CGRect(x: x, y: max(y, 0), width: max(w, 2), height: max(h, 2))
+            let scale = min(Double(picture.maxWidth) / source.width, Double(picture.maxHeight) / source.height, 1)
+            // Even sizes, as H.264 needs.
+            width = max(Int(source.width * scale) / 2 * 2, 2)
+            height = max(Int(source.height * scale) / 2 * 2, 2)
+            bitRate = picture.bitRate
+            CVPixelBufferPoolCreate(nil, nil, [
+                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey: width,
+                kCVPixelBufferHeightKey: height, kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
+            ] as CFDictionary, &pool)
+        }
+
+        func apply(to sample: CMSampleBuffer) -> CMSampleBuffer? {
+            guard let frame = CMSampleBufferGetImageBuffer(sample), let pool else { return nil }
+            var out: CVPixelBuffer?
+            guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &out) == kCVReturnSuccess, let out else { return nil }
+            let image = CIImage(cvPixelBuffer: frame)
+                .cropped(to: source)
+                .transformed(by: CGAffineTransform(translationX: -source.minX, y: -source.minY))
+                .transformed(by: CGAffineTransform(scaleX: CGFloat(width) / source.width, y: CGFloat(height) / source.height))
+            context.render(image, to: out)
+            if format == nil { CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: out, formatDescriptionOut: &format) }
+            guard let format else { return nil }
+            var timing = CMSampleTimingInfo(
+                duration: CMSampleBufferGetDuration(sample), presentationTimeStamp: CMSampleBufferGetPresentationTimeStamp(sample),
+                decodeTimeStamp: .invalid
+            )
+            var result: CMSampleBuffer?
+            CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: out, formatDescription: format, sampleTiming: &timing, sampleBufferOut: &result)
+            return result
+        }
     }
 
     /// Feeds an input from `next` until it runs out.
@@ -101,7 +188,7 @@ enum VideoSoundMixer {
     /// The mixed sound, a block at a time on the video's timeline (48 kHz stereo, interleaved).
     private final class SoundSource: @unchecked Sendable {
         private let app: AVAssetReaderTrackOutput?
-        private let mic: AVAudioFile
+        private let mic: AVAudioFile?
         private let micStartsAt: Double
         private let frames: Int
         private var position = 0
@@ -114,11 +201,11 @@ enum VideoSoundMixer {
         private var micBase = 0
         private let format: CMAudioFormatDescription
 
-        init(app: AVAssetReaderTrackOutput?, mic url: URL, micStartsAt: Double, frames: Int) throws {
+        init(app: AVAssetReaderTrackOutput?, mic: Mic?, frames: Int) throws {
             self.app = app
             appDone = app == nil
-            mic = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
-            self.micStartsAt = micStartsAt
+            self.mic = try mic.map { try AVAudioFile(forReading: $0.url, commonFormat: .pcmFormatFloat32, interleaved: false) }
+            micStartsAt = mic?.startsAt ?? 0
             self.frames = frames
             var description = AudioStreamBasicDescription(
                 mSampleRate: Double(VideoSoundMixer.rate), mFormatID: kAudioFormatLinearPCM,
@@ -138,7 +225,7 @@ enum VideoSoundMixer {
             let count = min(VideoSoundMixer.block, frames - position)
             var out = appFrames(position, count)
             let channels = VideoSoundMixer.channels
-            for i in 0..<count {
+            for i in 0..<count where mic != nil {
                 let voice = micSample(at: Double(position + i) / Double(VideoSoundMixer.rate))
                 for c in 0..<channels {
                     out[i * channels + c] = max(min(out[i * channels + c] + voice, 1), -1)
@@ -202,7 +289,7 @@ enum VideoSoundMixer {
                     micBase += keep
                 }
                 while index >= micBase + micSamples.count {
-                    guard let buffer = AVAudioPCMBuffer(pcmFormat: mic.processingFormat, frameCapacity: 16_000),
+                    guard let mic, let buffer = AVAudioPCMBuffer(pcmFormat: mic.processingFormat, frameCapacity: 16_000),
                           (try? mic.read(into: buffer)) != nil, buffer.frameLength > 0
                     else { return 0 }
                     micSamples += UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength))

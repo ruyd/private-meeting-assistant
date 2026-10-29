@@ -34,9 +34,9 @@ final class Recorder {
     @ObservationIgnored private var windowRecorder: WindowRecorder?
     /// The echo-removed mic while a "Record video + mic" video records.
     @ObservationIgnored private let videoMic = VideoMicBox()
-    /// Videos having the mic mixed in, which stopping waits for.
+    /// Videos being finished (mic mixed in, cut down), which stopping waits for.
     @ObservationIgnored private var videoMixes: [Task<Void, Never>] = []
-    /// Whether a video is having your microphone mixed in.
+    /// Whether a video is being finished.
     private(set) var isMixingVideo = false
     /// The audio file, once saving audio was first turned on; the capture threads write to it.
     @ObservationIgnored private let audioFile = AudioFileBox()
@@ -275,8 +275,9 @@ final class Recorder {
     var canRecordVideo: Bool { screenshotApp != nil }
 
     /// Starts recording the app's window as video, with your (echo-removed) voice mixed in when
-    /// `withMic`, or stops the recording in progress.
-    func toggleVideo(withMic: Bool = false) async {
+    /// `withMic` and cut down to where the video is, smaller, when `cutSize`, or stops the
+    /// recording in progress.
+    func toggleVideo(withMic: Bool = false, cutSize: Bool = false) async {
         if let windowRecorder {
             await windowRecorder.stop()
             return
@@ -304,9 +305,9 @@ final class Recorder {
                 self.windowRecorder = nil
                 self.isRecordingVideo = false
                 if let failure { self.error = "The video stopped: \(failure)" }
-                if let take {
+                if take != nil || cutSize {
                     let startedAt = recorder?.startedHostTime ?? requestedAt
-                    self.mixMic(take, into: url, videoStartMs: self.meetingMs(atHostTime: startedAt), meetingID: meetingID)
+                    self.finishVideo(url, mic: take, cutSize: cutSize, videoStartMs: self.meetingMs(atHostTime: startedAt), meetingID: meetingID)
                 } else {
                     self.scheduleFileWrite(meetingID)
                 }
@@ -319,26 +320,34 @@ final class Recorder {
         }
     }
 
-    /// Mixes the mic taken during a video into it, once echo removal has handed over the last of it.
-    private func mixMic(_ take: VideoMicRecorder, into url: URL, videoStartMs: Int, meetingID: Int64) {
+    /// Finishes a video: mixes in the mic taken during it, once echo removal has handed over the last
+    /// of it, and/or cuts it down to where the video is in the window, smaller.
+    private func finishVideo(_ url: URL, mic take: VideoMicRecorder?, cutSize: Bool, videoStartMs: Int, meetingID: Int64) {
         isMixingVideo = true
         let videoMic = videoMic
         let task = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1.5))
-            videoMic.set(nil)
-            if let first = take.finish() {
-                let mixed = url.deletingLastPathComponent().appending(path: ".mixing-" + url.lastPathComponent)
-                let micStartsAt = Double(first) / MonoResampler.sampleRate - Double(videoStartMs) / 1000
+            var mic: VideoSoundMixer.Mic?
+            if let take {
+                try? await Task.sleep(for: .seconds(1.5))
+                videoMic.set(nil)
+                mic = take.finish().map { first in
+                    VideoSoundMixer.Mic(url: take.url, startsAt: Double(first) / MonoResampler.sampleRate - Double(videoStartMs) / 1000)
+                }
+            }
+            if mic != nil || cutSize {
+                let finished = url.deletingLastPathComponent().appending(path: ".finishing-" + url.lastPathComponent)
                 do {
-                    try await Task.detached(priority: .userInitiated) {
-                        try await VideoSoundMixer.mix(video: url, mic: take.url, micStartsAt: micStartsAt, into: mixed)
-                        _ = try FileManager.default.replaceItemAt(url, withItemAt: mixed)
+                    try await Task.detached(priority: .userInitiated) { [mic] in
+                        let picture = cutSize ? VideoSoundMixer.Picture(crop: await VideoArea.detect(in: url)) : nil
+                        try await VideoSoundMixer.rewrite(video: url, mic: mic, picture: picture, into: finished)
+                        _ = try FileManager.default.replaceItemAt(url, withItemAt: finished)
                     }.value
                 } catch {
-                    try? FileManager.default.removeItem(at: mixed)
+                    try? FileManager.default.removeItem(at: finished)
                     self?.error = error.localizedDescription
                 }
             }
+            withExtendedLifetime(take) {}
             guard let self else { return }
             self.isMixingVideo = false
             self.scheduleFileWrite(meetingID)

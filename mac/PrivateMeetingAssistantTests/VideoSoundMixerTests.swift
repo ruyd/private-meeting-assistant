@@ -109,6 +109,37 @@ struct VideoSoundMixerTests {
         #expect(level(at(1.2, 2.5), hz: 1_000) > 0.08, "the mic from 1 s on")
     }
 
+    /// Cut size: the picture is cropped to the area (from the top left) and re-encoded; the sound
+    /// stays.
+    @Test(.timeLimit(.minutes(2)))
+    func cutsThePictureDown() async throws {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let video = dir.appending(path: "video.mp4")
+        try await makeVideo(video)
+        let cut = dir.appending(path: "cut.mp4")
+        try await VideoSoundMixer.rewrite(video: video, mic: nil, picture: .init(crop: CGRect(x: 0.25, y: 0, width: 0.5, height: 0.5)), into: cut)
+        let asset = AVURLAsset(url: cut)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        #expect(try await track.load(.naturalSize) == CGSize(width: 32, height: 32))
+        #expect(try await asset.loadTracks(withMediaType: .audio).count == 1)
+        #expect(abs(try await asset.load(.duration).seconds - 3) < 0.1)
+    }
+
+    /// The area finder keeps the box around sizeable blocks of changing cells and ignores small ones.
+    @Test func findsTheChangingBlock() {
+        let columns = 60, rows = 40, pairs = 20
+        var changes = [Int](repeating: 0, count: columns * rows)
+        // A player from (10, 5) to (49, 29), with a still stretch inside it…
+        for y in 5..<30 { for x in 10..<50 where !(20..<24).contains(x) || y < 15 { changes[y * columns + x] = 8 } }
+        // …and a cursor flicker far off.
+        changes[38 * columns + 2] = 20
+        let area = VideoArea.area(changes: changes, columns: columns, rows: rows, pairs: pairs)
+        #expect(area == CGRect(x: 10.0 / 60, y: 5.0 / 40, width: 40.0 / 60, height: 25.0 / 40))
+        #expect(VideoArea.area(changes: [Int](repeating: 0, count: columns * rows), columns: columns, rows: rows, pairs: pairs) == nil)
+        #expect(VideoArea.area(changes: [Int](repeating: 9, count: columns * rows), columns: columns, rows: rows, pairs: pairs) == nil, "change everywhere")
+    }
+
     @Test(.timeLimit(.minutes(2)))
     func makesAThumbnailOnce() async throws {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -128,5 +159,31 @@ struct VideoSoundMixerTests {
         #expect(try thumbnail.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate == made, "not made again")
         // The meeting's videos are still just the one.
         #expect(MeetingFiles.videos(in: dir).map { $0.url.lastPathComponent } == ["00.00.59.mp4"])
+    }
+}
+
+/// Diagnostic: the video area found in each .mp4 under `TEST_RUNNER_VIDEO_AREA_DIR`.
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["VIDEO_AREA_DIR"] != nil))
+struct VideoAreaReplay {
+    @Test(.timeLimit(.minutes(5)))
+    func detect() async throws {
+        let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["VIDEO_AREA_DIR"]!)
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?.compactMap { $0 as? URL }.filter { $0.pathExtension == "mp4" } ?? []
+        for file in files {
+            let clock = ContinuousClock.now
+            let area = await VideoArea.detect(in: file)
+            print("video area: \(file.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent)/\(file.lastPathComponent): "
+                  + (area.map { String(format: "x %.3f y %.3f w %.3f h %.3f", $0.minX, $0.minY, $0.width, $0.height) } ?? "none")
+                  + " in \(ContinuousClock.now - clock)")
+            // TEST_RUNNER_VIDEO_CUT_OUT=<folder>: also write the cut-size version there.
+            if let out = ProcessInfo.processInfo.environment["VIDEO_CUT_OUT"] {
+                let target = URL(fileURLWithPath: out).appending(path: file.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent.prefix(24) + ".mp4")
+                let start = ContinuousClock.now
+                try await VideoSoundMixer.rewrite(video: file, mic: nil, picture: .init(crop: area), into: target)
+                let before = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                let after = try target.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                print("video cut: \(target.lastPathComponent) \(before / 1_000_000) MB → \(after / 1_000_000) MB in \(ContinuousClock.now - start)")
+            }
+        }
     }
 }

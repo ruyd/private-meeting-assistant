@@ -1013,15 +1013,17 @@ private struct LiveRecordingView: View {
 }
 
 /// Record video, as a split button: the main part starts a video the way chosen last (the app's
-/// sound, or with your microphone mixed in after echo removal) or stops one; the chevron picks.
+/// sound, or with your microphone mixed in after echo removal; the whole window, or cut down to
+/// where the video is, smaller) or stops one; the chevron picks.
 private struct VideoButton: View {
     let recorder: Recorder
     @AppStorage("videoWithMic") private var withMic = false
+    @AppStorage("videoCutSize") private var cutSize = false
 
     private var title: String {
         if recorder.isRecordingVideo { return "Recording video" }
-        if recorder.isMixingVideo { return "Adding your mic…" }
-        return withMic ? "Record video + mic" : "Record video"
+        if recorder.isMixingVideo { return "Finishing video…" }
+        return "Record video" + (withMic ? " + mic" : "") + (cutSize ? " (cut size)" : "")
     }
 
     var body: some View {
@@ -1029,7 +1031,7 @@ private struct VideoButton: View {
         let enabled = recorder.phase == .recording && recorder.canRecordVideo && !recorder.isStartingVideo
         HStack(spacing: 0) {
             Button {
-                Task { await recorder.toggleVideo(withMic: withMic) }
+                Task { await recorder.toggleVideo(withMic: withMic, cutSize: cutSize) }
             } label: {
                 HStack(spacing: 8) {
                     if recorder.isStartingVideo || recorder.isMixingVideo && !active {
@@ -1050,9 +1052,9 @@ private struct VideoButton: View {
             .help(active
                 ? "Stop the video (⇧⌘V); the recording goes on"
                 : recorder.screenshotApp.map { app in
-                    withMic
-                        ? "Record \(app.name)'s window with its sound and your voice (echo removed), into the meeting's folder (⇧⌘V)"
-                        : "Record \(app.name)'s window with its sound, into the meeting's folder (⇧⌘V)"
+                    "Record \(app.name)'s window with its sound" + (withMic ? " and your voice (echo removed)" : "")
+                        + (cutSize ? ", cut down to the video in it (no tabs or page) and smaller" : "")
+                        + ", into the meeting's folder (⇧⌘V)"
                 } ?? "Video records the app you're recording; pick one under Sources next time")
 
             Rectangle().fill(active ? Color.red.opacity(0.5) : Theme.stroke).frame(width: 1).padding(.vertical, 10)
@@ -1063,6 +1065,8 @@ private struct VideoButton: View {
                     Text("Record video + mic").tag(true)
                 }
                 .pickerStyle(.inline)
+                Divider()
+                Toggle("Cut size: only the video in the window, smaller file", isOn: $cutSize)
             } label: {
                 Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
             }
@@ -1074,7 +1078,7 @@ private struct VideoButton: View {
             .frame(maxHeight: .infinity)
             .contentShape(.rect)
             .disabled(active)
-            .help("Record the app's sound only, or with your microphone too")
+            .help("Record the app's sound only or with your microphone too, and the whole window or cut down")
         }
         .font(.system(size: 14, weight: .semibold))
         .foregroundStyle(active ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
