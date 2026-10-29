@@ -246,7 +246,10 @@ private struct MeetingCard: View {
         .task(id: meeting.folder) {
             let folder = meeting.folder
             thumbnail = await Task.detached {
-                MeetingFiles.screenshots(in: folder).first.flatMap { ScreenCapture.thumbnail(of: $0.url, maxPixels: 240) }
+                if let shot = MeetingFiles.screenshots(in: folder).first { return ScreenCapture.thumbnail(of: shot.url, maxPixels: 240) }
+                // Else the first video's still.
+                guard let video = MeetingFiles.videos(in: folder).first, let still = await VideoThumbnail.ensure(for: video.url) else { return nil }
+                return ScreenCapture.thumbnail(of: still, maxPixels: 240)
             }.value
         }
     }

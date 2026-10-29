@@ -1272,36 +1272,50 @@ struct ScreenshotRow: View {
     }
 }
 
-/// A video in a transcript, where it started; click to open it once it's finished.
+/// A video in a transcript, where it started, as a still with a play button (like `ScreenshotRow`);
+/// click to open it once it's finished.
 struct VideoRow: View {
     let video: MeetingScreenshot
     var isRecording = false
     var leadingInset: CGFloat = 46
+    @State private var image: CGImage?
 
     var body: some View {
         Button {
             NSWorkspace.shared.open(video.url)
         } label: {
-            HStack(spacing: 10) {
-                Image(systemName: isRecording ? "record.circle" : "play.rectangle")
-                    .font(.title3)
-                    .foregroundStyle(isRecording ? .red : .secondary)
-                    .symbolEffect(.pulse, isActive: isRecording)
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                    if let image, !isRecording {
+                        Image(decorative: image, scale: 1)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    }
+                    Image(systemName: isRecording ? "record.circle" : "play.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(isRecording ? AnyShapeStyle(.red) : AnyShapeStyle(.white.opacity(0.9)))
+                        .shadow(radius: 3)
+                        .symbolEffect(.pulse, isActive: isRecording)
+                }
+                .frame(width: 168, height: 96)
+                .clipShape(.rect(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+                VStack(alignment: .leading, spacing: 4) {
                     Text(isRecording ? "Recording video…" : "Video").font(.callout.weight(.semibold))
                     Text(TranscriptExport.timestamp(video.atMs)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Theme.surface, in: .rect(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.stroke))
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .disabled(isRecording)
         .padding(.leading, leadingInset)
         .help(isRecording ? "Recording; it opens once you stop the video" : "Open the video")
+        .task(id: "\(video.url.path) \(isRecording)") {
+            guard !isRecording, let thumbnail = await VideoThumbnail.ensure(for: video.url) else { return }
+            image = await Task.detached { ScreenCapture.thumbnail(of: thumbnail, maxPixels: 400) }.value
+        }
     }
 }
 

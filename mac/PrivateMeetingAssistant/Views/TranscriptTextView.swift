@@ -141,15 +141,20 @@ struct TranscriptTextView: NSViewRepresentable {
                 link[.link] = media.url
                 link[.foregroundColor] = NSColor.secondaryLabelColor
                 out.append(NSAttributedString(string: "\t", attributes: body))
-                if !item.isVideo, let image = ScreenCapture.thumbnail(of: media.url, maxPixels: 480) {
+                let still = item.isVideo
+                    ? ScreenCapture.thumbnail(of: VideoThumbnail.url(for: media.url), maxPixels: 480)
+                    : ScreenCapture.thumbnail(of: media.url, maxPixels: 480)
+                if let image = still {
                     let width = min(CGFloat(image.width) / 2, 240)
-                    let thumbnail = NSImage(cgImage: image, size: NSSize(width: width, height: width * CGFloat(image.height) / CGFloat(image.width)))
+                    let thumbnail = item.isVideo
+                        ? VideoThumbnail.withPlayBadge(image, width: width)
+                        : NSImage(cgImage: image, size: NSSize(width: width, height: width * CGFloat(image.height) / CGFloat(image.width)))
                     let attachment = NSTextAttachment()
                     attachment.attachmentCell = NSTextAttachmentCell(imageCell: thumbnail)
                     let picture = NSMutableAttributedString(attachment: attachment)
                     picture.addAttributes(link, range: NSRange(location: 0, length: picture.length))
                     out.append(picture)
-                    out.append(NSAttributedString(string: "  Screenshot", attributes: link))
+                    out.append(NSAttributedString(string: item.isVideo ? "  Video" : "  Screenshot", attributes: link))
                 } else {
                     out.append(NSAttributedString(string: item.isVideo ? "▶︎ Video" : "Screenshot", attributes: link))
                 }

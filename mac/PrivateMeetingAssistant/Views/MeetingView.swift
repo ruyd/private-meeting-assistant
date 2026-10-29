@@ -166,7 +166,16 @@ struct MeetingView: View {
             meeting = try store.meeting(route.meetingID)
             segments = try store.segments(of: route.meetingID)
             screenshots = meeting.map { MeetingFiles.screenshots(in: $0.folder) } ?? []
-            videos = meeting.map { MeetingFiles.videos(in: $0.folder) } ?? []
+            let found = meeting.map { MeetingFiles.videos(in: $0.folder) } ?? []
+            if found.isEmpty {
+                videos = []
+            } else {
+                // Shown once their thumbnails are made (only the first time a video is seen).
+                Task {
+                    for video in found { await VideoThumbnail.ensure(for: video.url) }
+                    videos = found
+                }
+            }
             audio = meeting.map { $0.folder.appending(path: MeetingFiles.audioFile) }
                 .flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
             speakers = try store.speakers(of: route.meetingID)

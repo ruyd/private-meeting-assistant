@@ -108,4 +108,25 @@ struct VideoSoundMixerTests {
         #expect(level(at(0.2, 0.8), hz: 1_000) < 0.01, "no mic before it started")
         #expect(level(at(1.2, 2.5), hz: 1_000) > 0.08, "the mic from 1 s on")
     }
+
+    @Test(.timeLimit(.minutes(2)))
+    func makesAThumbnailOnce() async throws {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let folder = dir.appending(path: MeetingFiles.videosFolder, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let video = folder.appending(path: "00.00.59.mp4")
+        try await makeVideo(video, seconds: 2)
+
+        let thumbnail = try #require(await VideoThumbnail.ensure(for: video))
+        #expect(thumbnail.lastPathComponent == ".00.00.59.jpg")
+        let image = try #require(ScreenCapture.thumbnail(of: thumbnail))
+        #expect(image.width == 64 && image.height == 64)
+        let made = try thumbnail.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        try await Task.sleep(for: .milliseconds(20))
+        await VideoThumbnail.ensure(for: video)
+        #expect(try thumbnail.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate == made, "not made again")
+        // The meeting's videos are still just the one.
+        #expect(MeetingFiles.videos(in: dir).map { $0.url.lastPathComponent } == ["00.00.59.mp4"])
+    }
 }
