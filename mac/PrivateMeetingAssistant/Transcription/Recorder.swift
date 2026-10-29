@@ -37,6 +37,14 @@ final class Recorder {
     @ObservationIgnored private let videoMic = VideoMicBox()
     /// Videos being finished (mic mixed in, cut down), which stopping waits for.
     @ObservationIgnored private var videoMixes: [Task<Void, Never>] = []
+    /// Whether the microphone is muted: its audio is replaced with silence before anything hears it
+    /// (transcript, live text, saved audio, a video's mic), keeping the timeline whole. Set before
+    /// starting to begin muted.
+    var isMicMuted = false {
+        didSet { micMuted.set(isMicMuted) }
+    }
+    @ObservationIgnored private let micMuted = Flag()
+
     /// Videos being finished (mic mixed in, cut down), shown as such in the transcript.
     private(set) var finishingVideos: Set<URL> = []
     var isMixingVideo: Bool { !finishingVideos.isEmpty }
@@ -166,7 +174,11 @@ final class Recorder {
             },
             onBacklog: { count in Task { @MainActor [weak self] in self?.backlog = count } }
         )
-        await capture.start(consumer: { pipeline.append($0) })
+        await capture.start(consumer: { [micMuted] chunk in
+            pipeline.append(chunk.source == .mic && micMuted.isOn
+                ? AudioChunk(source: .mic, samples: [Float](repeating: 0, count: chunk.samples.count), hostTime: chunk.hostTime)
+                : chunk)
+        })
         guard capture.state == .running else {
             await pipeline.finish()
             try? store.deleteMeeting(meetingID)
@@ -642,6 +654,13 @@ private final class DeliveryCount: Sendable {
 }
 
 /// The audio file being written, swapped in from the main actor and fed from capture threads.
+/// A switch read from capture threads.
+private final class Flag: Sendable {
+    private let value = Mutex(false)
+    var isOn: Bool { value.withLock { $0 } }
+    func set(_ on: Bool) { value.withLock { $0 = on } }
+}
+
 /// A window of the recorded app to choose for screenshots and videos.
 struct CaptureWindowChoice: Identifiable {
     let id: CGWindowID

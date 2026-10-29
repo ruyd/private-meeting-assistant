@@ -131,6 +131,8 @@ private struct NewRecordingView: View {
             .menuIndicator(.hidden)
             .help("Choose the microphone that records you")
 
+            MuteButton(recorder: recorder, large: true)
+
             Button {
                 if micTest.isRunning {
                     micTest.stop()
@@ -834,7 +836,12 @@ private struct LiveRecordingView: View {
                 }
                 .chipStyle()
                 if let micName {
-                    Label(micName, systemImage: "mic").chipStyle()
+                    HStack(spacing: 6) {
+                        Label(micName, systemImage: recorder.isMicMuted ? "mic.slash" : "mic")
+                            .foregroundStyle(recorder.isMicMuted ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                        MuteButton(recorder: recorder, large: false)
+                    }
+                    .chipStyle()
                 }
                 Spacer()
                 // As in the recording design: words as they're spoken, or only the final lines.
@@ -1020,6 +1027,45 @@ private struct LiveRecordingView: View {
         if navigation.selection == .recorder, let id = recorder.meetingID {
             navigation.open(MeetingRoute(meetingID: id))
         }
+    }
+}
+
+/// Mutes and unmutes the microphone (⇧⌘M), next to its name: before recording (to start muted)
+/// and while recording.
+private struct MuteButton: View {
+    let recorder: Recorder
+    /// The New Recording page's tile size, or a small button in the recording header's chip.
+    let large: Bool
+
+    var body: some View {
+        let muted = recorder.isMicMuted
+        Button {
+            recorder.isMicMuted.toggle()
+        } label: {
+            Image(systemName: muted ? "mic.slash.fill" : "mic.fill")
+                .font(.system(size: large ? 17 : 12, weight: .semibold))
+                .foregroundStyle(muted ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                .frame(width: large ? 56 : 22, height: large ? 56 : 20)
+                .background {
+                    if large {
+                        RoundedRectangle(cornerRadius: 12).fill(muted ? AnyShapeStyle(Color.red.opacity(0.12)) : AnyShapeStyle(Theme.surface))
+                    } else if muted {
+                        Capsule().fill(Color.red.opacity(0.15))
+                    }
+                }
+                .overlay {
+                    if large {
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(muted ? AnyShapeStyle(Color.red.opacity(0.8)) : AnyShapeStyle(Theme.stroke), lineWidth: muted ? 1.5 : 1)
+                    }
+                }
+                .contentShape(.rect)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut("m", modifiers: [.command, .shift])
+        .help(muted ? "Unmute the microphone (⇧⌘M)" : "Mute the microphone (⇧⌘M): nothing you say is transcribed or saved until you unmute")
+        .accessibilityLabel(muted ? "Unmute the microphone" : "Mute the microphone")
     }
 }
 
