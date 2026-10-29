@@ -345,6 +345,40 @@ private struct AboutSettings: View {
     }
 }
 
+/// A summary engine to choose, like `ModelRow`: a check, its name and what it is, and its state
+/// on the right. Greyed out (and not choosable) when it can't be used now.
+private struct EngineRow<Status: View>: View {
+    let title: String
+    let isSelected: Bool
+    var isAvailable = true
+    let detail: String
+    let select: () -> Void
+    @ViewBuilder let status: () -> Status
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: select) {
+                HStack(spacing: 12) {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                        .imageScale(.large)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                        Text(detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .disabled(!isAvailable)
+            .opacity(isAvailable ? 1 : 0.5)
+            .help(isAvailable ? "Use \(title) for summaries" : "\(title) can't be used right now")
+            status()
+        }
+    }
+}
+
 private struct ModelRow: View {
     let model: SpeechModel
     let isSelected: Bool
@@ -423,46 +457,69 @@ private struct SummarySettings: View {
 
     private var models: [String] { usesYours ? ollama.yours.models : ollama.downloadedModels }
 
+    private var effectiveName: String {
+        switch effective {
+        case .automatic, .yours: "your Ollama"
+        case .apple: "Apple Intelligence"
+        case .downloaded: "the downloaded Ollama"
+        }
+    }
+
+    private func select(_ engine: SummaryEngine.Choice) { choice = engine.rawValue }
+
     var body: some View {
         Section {
-            Picker(selection: $choice) {
-                Text("Automatic").tag(SummaryEngine.Choice.automatic.rawValue)
-                Text("Apple Intelligence").tag(SummaryEngine.Choice.apple.rawValue)
-                    .selectionDisabled(SummaryEngine.appleProblem != nil)
-                Text("Your Ollama").tag(SummaryEngine.Choice.yours.rawValue)
-                    .selectionDisabled(ollama.yours.problem != nil)
-                if SummaryEngine.offersDownload {
-                    Text("Downloaded Ollama").tag(SummaryEngine.Choice.downloaded.rawValue)
-                }
-            } label: {
-                Text("Engine")
-                Text(SummaryEngine.offersDownload
-                    ? "Ollama is the free program that runs the summary model. Automatic uses yours if it's running, otherwise a private copy downloaded here. Apple Intelligence uses the model built into macOS."
-                    : "Automatic uses your Ollama if it's running, otherwise Apple Intelligence, the model built into macOS.")
-            }
-            LabeledContent("Apple Intelligence") {
+            EngineRow(
+                title: "Automatic", isSelected: choice == SummaryEngine.Choice.automatic.rawValue,
+                detail: (SummaryEngine.offersDownload
+                    ? "Your Ollama if it's running, otherwise a private copy downloaded here."
+                    : "Your Ollama if it's running, otherwise Apple Intelligence.")
+                    + (choice == SummaryEngine.Choice.automatic.rawValue ? " Now using \(effectiveName)." : ""),
+                select: { select(.automatic) }
+            ) { EmptyView() }
+            EngineRow(
+                title: "Apple Intelligence", isSelected: choice == SummaryEngine.Choice.apple.rawValue,
+                isAvailable: SummaryEngine.appleProblem == nil,
+                detail: "The model built into macOS.", select: { select(.apple) }
+            ) {
                 Text(SummaryEngine.appleProblem ?? "Ready, on this Mac").foregroundStyle(.secondary)
             }
-            LabeledContent("Your Ollama") {
+            EngineRow(
+                title: "Your Ollama", isSelected: choice == SummaryEngine.Choice.yours.rawValue,
+                isAvailable: ollama.yours.problem == nil,
+                detail: "The Ollama app on this Mac, with the models you've pulled.", select: { select(.yours) }
+            ) {
                 if let problem = ollama.yours.problem {
                     Text(problem).foregroundStyle(.secondary)
                 } else {
                     Text("\(ollama.yours.version ?? "") · ^[\(ollama.yours.models.count) local model](inflect: true)").foregroundStyle(.secondary)
                 }
             }
-            if SummaryEngine.offersDownload { LabeledContent("Downloaded Ollama") {
-                if let progress = ollama.progress["ollama"] {
-                    ProgressView(value: progress).frame(width: 140)
-                } else if ollama.isDownloadedInstalled {
-                    Text("Installed (\(SummaryEngine.version))").foregroundStyle(.secondary)
-                } else {
-                    HStack {
-                        Text("\(bytes.string(fromByteCount: SummaryEngine.archiveBytes)) download").foregroundStyle(.secondary)
-                        Button("Download") { Task { await ollama.installOllama() } }
-                            .disabled(SummaryEngine.spaceProblem(modelBytes: SummaryEngine.recommendedModel.bytes) != nil)
+            if SummaryEngine.offersDownload {
+                EngineRow(
+                    title: "Downloaded Ollama", isSelected: choice == SummaryEngine.Choice.downloaded.rawValue,
+                    detail: "A private copy, run only while this app is open.", select: { select(.downloaded) }
+                ) {
+                    if let progress = ollama.progress["ollama"] {
+                        ProgressView(value: progress).frame(width: 140)
+                    } else if ollama.isDownloadedInstalled {
+                        Text("Installed (\(SummaryEngine.version))").foregroundStyle(.secondary)
+                    } else {
+                        HStack {
+                            Text("\(bytes.string(fromByteCount: SummaryEngine.archiveBytes)) download").foregroundStyle(.secondary)
+                            Button("Download") { Task { await ollama.installOllama() } }
+                                .disabled(SummaryEngine.spaceProblem(modelBytes: SummaryEngine.recommendedModel.bytes) != nil)
+                        }
                     }
                 }
-            } }
+            }
+        } header: {
+            Text("Engine")
+        } footer: {
+            Text("The program that runs the summary model, on this Mac. Ollama is free.")
+        }
+
+        Section {
             if effective != .apple { Picker(selection: $model) {
                 ForEach(models, id: \.self) { Text($0).tag($0) }
                 if !models.contains(model) {
