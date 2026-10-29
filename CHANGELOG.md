@@ -17,6 +17,7 @@ a successful release they add the build to **Published builds** and tag the comm
 - Live transcript: words appear as they're spoken (about half a second, with Apple's on-device recognizer), then Whisper's more accurate line replaces them a few seconds later. The Live / Delayed switch in the recording view turns it off.
 - Fewer invented lines: Whisper's stock phrases over room noise, keyboard clicks and a fan near the mic ("Thank you.", "I'm going to go ahead…") and its repeat loops no longer reach the transcript. With live text on, a line is also dropped when Apple's recognizer, listening to the same audio, heard no words there.
 - Summaries no longer make up a meeting: a recording with almost nothing said gets "Too little was said to summarize.", and the model is told to say when little of substance was discussed instead of inventing topics or tasks.
+- The microphone's rumble below voices (fans, air conditioning, desk bumps) is filtered out, in the transcript and the saved audio: about 10 dB less noise from a fan above the mic.
 - Saved audio no longer crackles: small gaps and overlaps between captured chunks (2–9 ms dropouts) are gone.
 
 ## 1.0.0 — 2026-10-28

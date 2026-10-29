@@ -94,23 +94,33 @@ struct LiveFragmentTests {
 
     @Test func whisperLinesWithNoWordsHeardAreSuspect() {
         func line(_ start: Int, _ end: Int) -> TranscriptLine { TranscriptLine(source: .mic, startMs: start, endMs: end, text: "Thank you.") }
+        func fragment(_ start: Int, _ end: Int, _ text: String, final: Bool = true) -> LiveTranscriber.Fragment {
+            LiveTranscriber.Fragment(startMs: start, endMs: end, text: text, isFinal: final)
+        }
         var heard = LiveTranscriber.Heard(from: 0)
-        heard.add(LiveTranscriber.Fragment(startMs: 4_800, endMs: 7_800, text: "Okay, this is", isFinal: true))
+        heard.add(fragment(4_860, 7_800, "Okay, this is"))
         // Fan noise from 12 s: Whisper wrote a line, the recognizer nothing.
-        #expect(heard.heardNothing(during: line(12_000, 13_500)))
+        #expect(heard.verdict(on: line(12_000, 13_500)) == .nothing)
         // Real speech, timed a little differently by the two.
-        #expect(!heard.heardNothing(during: line(4_400, 7_700)))
-        #expect(!heard.heardNothing(during: line(8_100, 9_000)))
+        #expect(heard.verdict(on: line(4_400, 7_700)) == .heard)
+        #expect(heard.verdict(on: line(8_100, 9_000)) == .heard)
         // The recognizer wrote "Um" over the fan: not words.
-        heard.add(LiveTranscriber.Fragment(startMs: 550, endMs: 6_610, text: "Um.", isFinal: true))
+        heard.add(fragment(550, 6_610, "Um."))
         // Noise from the very start, as with a fan above the mic.
-        #expect(heard.heardNothing(during: line(533, 2_033)))
+        #expect(heard.verdict(on: line(533, 2_033)) == .nothing)
         // Too near the start of listening to tell.
-        #expect(!heard.heardNothing(during: line(0, 1_200)))
-        heard.until = 25_500
-        // Noise running into the end of the recording is judged up to a second before it…
-        #expect(heard.heardNothing(during: line(15_400, 25_500)))
-        // …but a last word or two said just before stopping is kept.
-        #expect(!heard.heardNothing(during: line(23_800, 25_400)))
+        #expect(heard.verdict(on: line(0, 1_000)) == .heard)
+        // Words in progress stretch back too far to rule on yet: "Thank you." at 3.9 s over noise,
+        // just before speech the recognizer is still working on.
+        heard.add(fragment(0, 21_000, "We decided to", final: false))
+        #expect(heard.verdict(on: line(19_000, 20_000)) == .unsure)
+        heard.add(fragment(21_800, 25_000, "We decided to submit"))
+        #expect(heard.verdict(on: line(19_000, 20_000)) == .nothing)
+        heard.until = 30_500
+        // Noise running into the end of the recording is judged up to just before it…
+        #expect(heard.verdict(on: line(28_987, 30_507)) == .nothing)
+        // …but a last word said just before stopping is kept.
+        #expect(heard.verdict(on: line(29_700, 30_400)) == .heard)
     }
+
 }

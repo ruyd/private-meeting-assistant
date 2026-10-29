@@ -27,14 +27,20 @@ final class LiveTranscriber: Sendable {
     struct Heard: Sendable {
         let from: Int
         var until: Int?
+        /// Where finished results found words. These are timed closely; results still in progress
+        /// can stretch back seconds before the speech (0–6.8 s for words spoken at 4.4–7.7 s).
         var words: [Range<Int>] = []
+        /// The result in progress, if it has words.
+        var pending: Range<Int>?
+
+        enum Verdict { case heard, unsure, nothing }
 
         /// Speech this close to where listening began or ended may have been cut short for the
-        /// recognizer (it reports the last words a moment late), so only the rest of a line is judged…
-        static let startEdgeMs = 500
-        static let endEdgeMs = 1_000
+        /// recognizer (it reports words about half a second late), so only the rest of a line is
+        /// judged…
+        static let edgeMs = 500
         /// …and only if at least this much of it is left.
-        static let minJudgedMs = 1_000
+        static let minJudgedMs = 700
         /// How near a line the recognizer's words may lie and still count (their timings differ).
         static let slackMs = 500
 
@@ -43,18 +49,26 @@ final class LiveTranscriber: Sendable {
 
         mutating func add(_ fragment: Fragment) {
             let said = fragment.text.lowercased().split { !$0.isLetter && $0 != "-" }
-            guard said.contains(where: { !Self.fillers.contains(String($0)) }) else { return }
-            words.append(fragment.startMs..<max(fragment.endMs, fragment.startMs + 1))
+            let hasWords = said.contains { !Self.fillers.contains(String($0)) }
+            let range = fragment.startMs..<max(fragment.endMs, fragment.startMs + 1)
+            if fragment.isFinal {
+                pending = nil
+                if hasWords { words.append(range) }
+            } else {
+                pending = hasWords ? range : nil
+            }
         }
 
-        /// True if the recognizer listened to (most of) `line` and found no words in it. A line
-        /// running into the end of the recording, as noise often does, is judged up to there.
-        func heardNothing(during line: TranscriptLine) -> Bool {
-            let start = max(line.startMs, from + Self.startEdgeMs)
-            let end = until.map { min(line.endMs, $0 - Self.endEdgeMs) } ?? line.endMs
-            guard end - start >= Self.minJudgedMs else { return false }
+        /// Whether the recognizer found words where `line` was said: `unsure` when only a result
+        /// still in progress might cover it. A line running into the end of the recording, as noise
+        /// often does, is judged up to there.
+        func verdict(on line: TranscriptLine) -> Verdict {
+            let start = max(line.startMs, from + Self.edgeMs)
+            let end = until.map { min(line.endMs, $0 - Self.edgeMs) } ?? line.endMs
+            guard end - start >= Self.minJudgedMs else { return .heard }
             let stretch = (start - Self.slackMs)..<(end + Self.slackMs)
-            return !words.contains { $0.overlaps(stretch) }
+            if words.contains(where: { $0.overlaps(stretch) }) { return .heard }
+            return pending?.overlaps(stretch) == true ? .unsure : .nothing
         }
     }
 

@@ -4,10 +4,12 @@ import OSLog
 
 private let log = Logger(subsystem: "dev.ruy.private-meeting-assistant", category: "mic")
 
-/// A microphone via AVAudioEngine, delivered as 16 kHz mono chunks.
+/// A microphone via AVAudioEngine, delivered as 16 kHz mono chunks with rumble below voices taken
+/// out (`LowCutFilter`).
 final class MicCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let resampler = MonoResampler()
+    private let lowCut = LowCutFilter()
     /// nil follows the system default input.
     private let deviceUID: String?
     private let onChunk: @Sendable (AudioChunk) -> Void
@@ -59,11 +61,13 @@ final class MicCapture: @unchecked Sendable {
         guard format.sampleRate > 0, format.channelCount > 0 else { throw CaptureError.noMicrophone }
         log.notice("mic input format: \(format.description, privacy: .public)")
         let resampler = resampler
+        let lowCut = lowCut
         let onChunk = onChunk
         // The tap block runs on an AVAudioEngine worker thread (not the real-time thread),
-        // so converting here is fine and keeps the resampler on a single thread.
+        // so converting here is fine and keeps the resampler and filter on a single thread.
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, when in
-            guard let samples = try? resampler.convert(buffer), !samples.isEmpty else { return }
+            guard let converted = try? resampler.convert(buffer), !converted.isEmpty else { return }
+            let samples = lowCut.process(converted)
             let hostTime = when.isHostTimeValid ? when.hostTime : mach_absolute_time()
             onChunk(AudioChunk(source: .mic, samples: samples, hostTime: hostTime))
         }

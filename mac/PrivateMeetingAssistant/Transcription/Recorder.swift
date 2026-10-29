@@ -413,20 +413,26 @@ final class Recorder {
     }
 
     /// Takes a line from Whisper, unless the live recognizer heard no words where it was said. Its
-    /// words can lag a little behind, so a line it hasn't heard yet gets one more look shortly after.
+    /// results lag a little and are only timed closely once finished, so a line it hasn't clearly
+    /// heard gets one more look shortly after (unless it has stopped listening).
     private func insert(_ line: TranscriptLine, waited: Bool = false) {
-        if let heard = heard[line.source], heard.heardNothing(during: line) {
-            if !waited, heard.until == nil {
+        if let heard = heard[line.source] {
+            let final = waited || heard.until != nil
+            switch heard.verdict(on: line) {
+            case .heard: break
+            case .unsure where final: break
+            case .nothing where final:
+                liveLog.notice("dropped a line the live recognizer heard no words in: \(line.text, privacy: .private)")
+                return
+            case .unsure, .nothing:
                 undelivered.add(1)
                 Task { [undelivered] in
                     try? await Task.sleep(for: .seconds(2))
                     self.insert(line, waited: true)
                     undelivered.add(-1)
                 }
-            } else {
-                liveLog.notice("dropped a line the live recognizer heard no words in: \(line.text, privacy: .private)")
+                return
             }
-            return
         }
         add(line)
     }
