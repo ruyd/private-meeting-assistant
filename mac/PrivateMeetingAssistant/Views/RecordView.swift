@@ -819,7 +819,8 @@ private struct LiveRecordingView: View {
                     .help("Rename the meeting")
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
-                    MeterRow(label: "Me", level: session.levels[.mic] ?? 0)
+                    // Flat while muted: nothing of the mic is used.
+                    MeterRow(label: "Me", level: recorder.isMicMuted ? 0 : session.levels[.mic] ?? 0)
                     if session.captureSystemAudio {
                         MeterRow(label: "Them", level: session.levels[.system] ?? 0)
                     }
