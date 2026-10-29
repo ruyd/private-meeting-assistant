@@ -39,10 +39,11 @@ final class Recorder {
     @ObservationIgnored private var videoMixes: [Task<Void, Never>] = []
     /// Whether the microphone is muted: its audio is replaced with silence before anything hears it
     /// (transcript, live text, saved audio, a video's mic), keeping the timeline whole. Set before
-    /// starting to begin muted.
+    /// starting to begin muted. Remembered across launches.
     var isMicMuted = false {
         didSet {
             micMuted.set(isMicMuted)
+            if remembersMute { UserDefaults.standard.set(isMicMuted, forKey: SettingsKeys.micMuted) }
             guard phase == .recording, isMicMuted != oldValue else { return }
             if isMicMuted {
                 mutedSpans.append(MutedSpan(startMs: elapsedMs))
@@ -52,6 +53,7 @@ final class Recorder {
         }
     }
     @ObservationIgnored private let micMuted = Flag()
+    @ObservationIgnored private let remembersMute: Bool
     /// When the mic was muted, in meeting milliseconds. Speech from just before muting is
     /// transcribed a little later and its line can be timed into the muted stretch: a "Me" line
     /// centred in one is dropped.
@@ -103,9 +105,15 @@ final class Recorder {
     /// Overrides the meetings folder setting (for self-tests); nil uses the one chosen in setup.
     @ObservationIgnored private let meetingsRoot: URL?
 
-    init(library: MeetingLibrary = .shared, meetingsRoot: URL? = nil) {
+    /// `remembersMute`: keep the mute button's state across launches (not for self-tests).
+    init(library: MeetingLibrary = .shared, meetingsRoot: URL? = nil, remembersMute: Bool = true) {
         self.library = library
         self.meetingsRoot = meetingsRoot
+        self.remembersMute = remembersMute
+        if remembersMute, UserDefaults.standard.bool(forKey: SettingsKeys.micMuted) {
+            isMicMuted = true
+            micMuted.set(true)
+        }
     }
 
     /// `language` is an ISO code, or nil to detect it. `removeEcho` keeps the other participants'

@@ -10,6 +10,8 @@ enum SettingsKeys {
     static let saveAudio = "saveAudio"
     /// Show words as they're spoken while recording (Live), or only Whisper's lines (Delayed).
     static let liveTranscript = "liveTranscript"
+    /// The microphone's mute button, kept across launches.
+    static let micMuted = "micMuted"
 }
 
 /// The Settings window: one tab per area, each setting with a plain-language note on what it does.
