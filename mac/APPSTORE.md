@@ -10,12 +10,14 @@ The app ships two ways from the same code:
 | Summaries | Apple Intelligence, your Ollama, or a downloaded Ollama | Apple Intelligence or your Ollama |
 | Meetings folder | `~/Meetings` by default | Chosen in an open panel, kept with a security-scoped bookmark |
 | Uninstall button | In Settings › About | No (removed from Launchpad or the Applications folder) |
+| Google, Microsoft and Zoom sign-in | In Settings › Accounts, with client IDs | No |
 
 The `APPSTORE` compile flag (set only in the `AppStore` configuration) makes the differences:
 
 - **No downloaded Ollama.** The App Store doesn't allow downloading and running code (guideline 2.5.2), so the code that downloads, verifies and starts Ollama isn't compiled in at all. Summaries use Apple's on-device model (Foundation Models), or the user's own Ollama on `localhost`. Speech and speaker models are still downloaded: they're data, not code.
 - **The meetings folder** is one the user picks (`files.user-selected.read-write`), with a bookmark per folder ever chosen, so earlier meetings stay readable after switching folders.
 - **No `tccutil`** and no self-uninstall.
+- **No sign-in.** Sign-in comes back to a loopback listener, which needs `com.apple.security.network.server`. App Review rejected 1.0.0 for having that entitlement with no matching feature, so it's gone, and the Accounts tab with it. To bring sign-in to the App Store, register the OAuth apps (`OAUTH.md`), restore the entitlement, remove the `APPSTORE` checks in `MeetingAccounts.available` and `SettingsView`, and describe the feature in the review notes.
 
 Everything else was checked in the sandboxed build: microphone and system-audio capture (Core Audio process tap), live transcription, telling speakers apart, saving audio, writing to the chosen folder, and summaries. It also includes the privacy manifest (`PrivacyInfo.xcprivacy`: UserDefaults, elapsed time, free disk space; nothing tracked or collected) and `ITSAppUsesNonExemptEncryption = NO`.
 
@@ -27,7 +29,7 @@ The app is registered: [App Store Connect app 6828188643](https://appstoreconnec
 2. **Register the bundle ID** first; App Store Connect only lists registered ones. In Certificates, Identifiers & Profiles › Identifiers › **+**: App IDs › App, description "Private Meeting Assistant", **Explicit** bundle ID `dev.ruy.private-meeting-assistant`, platform macOS. Leave every capability unchecked: the sandbox, microphone, network and file access come from `AppStore.entitlements`, and Apple Intelligence, Screen Recording, system audio and the Keychain need none. (A wildcard ID would rule out capabilities such as In-App Purchase or iCloud later, and the bundle ID can't change once the app ships.)
 3. **Apps › New App**: platform macOS, name "Private Meeting Assistant" (or another if taken), the bundle ID above, any SKU (such as `PMA-MAC`).
 4. **Pricing and Availability**: choose the price and the countries.
-5. **App Privacy**: answer "Data Not Collected". Recordings, transcripts, summaries and voice profiles stay on the Mac; calendar sign-ins go straight from the Mac to Google, Microsoft or Zoom, never to you. Link a privacy policy URL that says the same (required for every app).
+5. **App Privacy**: answer "Data Not Collected". Recordings, transcripts, summaries and voice profiles stay on the Mac. Link a privacy policy URL that says the same (required for every app).
 6. **App information**: category Productivity, age rating questionnaire, support URL.
 7. **Version page**: description, keywords, and screenshots (16:10, e.g. 2880×1800). `docs/images/` has a start; take new ones from a Meetings folder with only demo meetings in it.
 8. **App Review notes**, so review goes smoothly. Something like:
@@ -63,8 +65,6 @@ It archives the `AppStore` configuration with a new build number (the time, or `
 `scripts/release.sh` (the notarized DMG) does the same checks and records its builds as `devid/<version>-<build>`.
 
 `EXPORT_ONLY=1` writes the signed `.pkg` to `mac/build/appstore/` instead of uploading.
-
-The calendar sign-in (Google, Microsoft, Zoom) only appears if `Config/OAuth.local.xcconfig` has client IDs when building (see `OAUTH.md`).
 
 ## Testing the sandboxed build locally
 

@@ -8,11 +8,8 @@
 	<!-- Recording you. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
-	<!-- Downloading speech models, reading calendars and meetings, and your own Ollama on localhost. -->
+	<!-- Downloading speech models and your own Ollama on localhost. -->
 	<key>com.apple.security.network.client</key>
-	<true/>
-	<!-- The one-time loopback listener that receives Google, Microsoft and Zoom sign-ins. -->
-	<key>com.apple.security.network.server</key>
 	<true/>
 	<!-- The meetings folder you choose, kept across launches with a bookmark. -->
 	<key>com.apple.security.files.user-selected.read-write</key>

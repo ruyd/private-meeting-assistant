@@ -25,7 +25,7 @@ You can delete any meeting from the app, or its folder in Finder.
 
 - **Model downloads**: the speech and speaker models are downloaded once from Hugging Face
   (huggingface.co). These are plain file downloads; nothing about you or your meetings is sent.
-- **Calendar and meeting sign-in (optional)**: if you sign in with Google, Microsoft 365 or Zoom, the
+- **Calendar and meeting sign-in (optional, direct-download version only)**: if you sign in with Google, Microsoft 365 or Zoom, the
   app talks directly from your Mac to that service to list your upcoming meetings and their invitees.
   The sign-in tokens are kept in your Mac's Keychain. Nothing goes through the developer.
 - **Your own Ollama (optional)**: if you choose it for summaries, the app sends the transcript to the

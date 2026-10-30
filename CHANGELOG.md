@@ -13,7 +13,8 @@ Nothing yet.
 
 ## 1.0.0 — 2026-10-29
 
-First public release, on the Mac App Store and as a notarized download.
+First public release, on the Mac App Store and as a notarized download. The App Store version leaves out
+Google, Microsoft and Zoom sign-in.
 
 - Live transcription on the Mac with whisper.cpp (Metal): Base (English), Small (English) or Large (Multi-language). Words show as they're spoken, then Whisper's more accurate line replaces them.
 - Records your microphone and the call's audio (one app, all system audio, or the microphone only for in-person meetings). No bot joins the meeting. A mute button keeps you out of the transcript and the recording.

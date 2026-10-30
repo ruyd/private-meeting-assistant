@@ -57,7 +57,15 @@ final class MeetingAccounts {
     }
 
     /// Providers this build (or the administrator) has an OAuth app for; the others aren't offered.
-    var available: [MeetingProvider] { MeetingProvider.allCases.filter { !Self.client($0).clientID.isEmpty } }
+    /// None on the App Store: sign-in comes back to a loopback listener, which takes the
+    /// `network.server` entitlement, and App Review refuses that for a feature the app doesn't show.
+    var available: [MeetingProvider] {
+        #if APPSTORE
+        []
+        #else
+        MeetingProvider.allCases.filter { !Self.client($0).clientID.isEmpty }
+        #endif
+    }
 
     // MARK: Linking
 

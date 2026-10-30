@@ -20,8 +20,8 @@ no unrestricted web access, no gambling, no contests). The result is 4+.
 
 ## App Privacy
 
-**Data Not Collected.** Recordings, transcripts, summaries, notes and voice profiles stay on the Mac;
-calendar sign-ins go straight from the Mac to Google, Microsoft or Zoom. See `PRIVACY.md`.
+**Data Not Collected.** Recordings, transcripts, summaries, notes and voice profiles stay on the Mac.
+See `PRIVACY.md`.
 
 ## Pricing and Availability
 
@@ -55,7 +55,6 @@ LIVE TRANSCRIPT, ON YOUR MAC
 
 WHO SAID WHAT
 • Voices are told apart automatically (Participant 1, 2, 3…). Name them when the recording stops, from a voice clip and a quote.
-• Sign in with Google, Microsoft 365 or Zoom to pick the meeting you're in and bring in its invitees.
 
 SUMMARIES AND ACTION ITEMS
 • A summary, the decisions made and the action items with their owners, written by Apple Intelligence on your Mac, or by your own Ollama.
@@ -101,7 +100,7 @@ Permissions: Microphone records the user. System Audio Recording hears the other
 
 First launch: the app downloads a speech model (about 570 MB) from Hugging Face. It is data for the bundled whisper.cpp engine, not code. The voice activity model is bundled; the optional speaker model (8 MB) is also downloaded as data.
 
-Summaries use Apple Intelligence (on in System Settings › Apple Intelligence & Siri) or the user's own Ollama on localhost. No other servers are contacted, except Google, Microsoft or Zoom if the user chooses to sign in for calendar meetings (optional).
+Summaries use Apple Intelligence (on in System Settings › Apple Intelligence & Siri) or the user's own Ollama on localhost. No other servers are contacted.
 
 To test without a call: choose "Microphone only" on the New Recording page, press Start recording (⌘R), speak for 20 seconds or so, and press Stop (⌘.). The meeting opens with its transcript, and a summary follows. To test call audio, play a video in any app with "System audio" selected.
 ```

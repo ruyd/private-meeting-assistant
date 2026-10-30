@@ -25,7 +25,9 @@ struct SettingsView: View {
         TabView {
             Tab("Transcription", systemImage: "waveform") { TranscriptionSettings() }
             Tab("Summaries", systemImage: "text.alignleft") { Form { SummarySettings() }.formStyle(.grouped) }
+            #if !APPSTORE
             Tab("Accounts", systemImage: "calendar") { AccountSettings() }
+            #endif
             Tab("Storage", systemImage: "folder") { StorageSettings() }
             Tab("Permissions", systemImage: "hand.raised") { PermissionSettings() }
             Tab("About", systemImage: "info.circle") { AboutSettings() }
