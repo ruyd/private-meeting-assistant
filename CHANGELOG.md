@@ -65,3 +65,4 @@ Added by `mac/scripts/release-appstore.sh` and `mac/scripts/release.sh`. Each bu
 |---|---|---|---|---|
 | 2026-10-28 | 1.0.0 | 202610281803 | App Store | 4427a09 |
 | 2026-10-29 | 1.0.0 | 202610291204 | App Store | a24ae9d |
+| 2026-10-30 | 1.0.0 | 202610300806 | App Store | 6c0b1bf |
