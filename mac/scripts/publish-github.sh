@@ -47,6 +47,9 @@ awk -v v="$VERSION" '
 printf '\n---\nFor Macs with Apple Silicon, macOS 26 or later. Open the DMG and drag the app to Applications; it updates itself from then on.\n' >> "$notes"
 
 shasum -a 256 "$DMG" | sed "s|  .*/|  |" > "$DMG.sha256"
-gh release create "$TAG" "$DMG" "$DMG.sha256" --repo "$REPO" --target "$commit" \
+# The same DMG under a name without the version, so the README can link to
+# releases/latest/download/PrivateMeetingAssistant.dmg.
+cp "$DMG" "$OUT/PrivateMeetingAssistant.dmg"
+gh release create "$TAG" "$DMG" "$DMG.sha256" "$OUT/PrivateMeetingAssistant.dmg" --repo "$REPO" --target "$commit" \
   --title "$APP_NAME $VERSION" --notes-file "$notes" ${DRAFT:+--draft}
 echo "Published $TAG: https://github.com/$REPO/releases/tag/$TAG"

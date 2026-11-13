@@ -9,7 +9,7 @@ A native macOS app that transcribes your meetings live, then writes the summary,
 Both are free, for Macs with Apple Silicon on macOS 26 or later.
 
 - **[Mac App Store](https://apps.apple.com/app/private-meeting-assistant/id6828188643)**: sandboxed, updated by the App Store. It leaves out Google, Microsoft and Zoom sign-in and can't download Ollama; it summarizes with Apple Intelligence or your own Ollama.
-- **[GitHub Releases](https://github.com/ruyd/private-meeting-assistant/releases/latest)**: the full app as a notarized DMG. Open it and drag the app to Applications. It checks GitHub for a new version once a day and installs it when you say so (Check for Updates… in the app menu; turn the daily check off in Settings › About).
+- **[Download the DMG](https://github.com/ruyd/private-meeting-assistant/releases/latest/download/PrivateMeetingAssistant.dmg)** from [GitHub Releases](https://github.com/ruyd/private-meeting-assistant/releases/latest): the full app, notarized. Open it and drag the app to Applications. It checks GitHub for a new version once a day and installs it when you say so (Check for Updates… in the app menu; turn the daily check off in Settings › About).
 
 ## Why it exists
 
@@ -100,7 +100,7 @@ Archives, signs, notarizes and staples the app (Apple Silicon only), then wraps 
 mac/scripts/publish-github.sh
 ```
 
-Creates the `vX.Y.Z` GitHub release with the DMG, its SHA-256 and the version's CHANGELOG section as notes (`DRAFT=1` for a draft). Installed copies find it within a day. The updater installs a new version only if it's signed by the same Developer ID team as the running app, and only offers versions newer than its own, so bump `MARKETING_VERSION` for every release.
+Creates the `vX.Y.Z` GitHub release with the DMG (also as `PrivateMeetingAssistant.dmg`, for the README's download link), its SHA-256 and the version's CHANGELOG section as notes (`DRAFT=1` for a draft). Installed copies find it within a day. The updater installs a new version only if it's signed by the same Developer ID team as the running app, and only offers versions newer than its own, so bump `MARKETING_VERSION` for every release.
 
 ## How it works
 
