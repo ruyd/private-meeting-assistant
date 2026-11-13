@@ -10,6 +10,13 @@ struct PrivateMeetingAssistantApp: App {
                 .frame(minWidth: 900, minHeight: 600)
         }
         .defaultSize(width: 1280, height: 820)
+        #if !APPSTORE
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { Task { await Updater.shared.check(userInitiated: true) } }
+            }
+        }
+        #endif
 
         Settings {
             SettingsView()
@@ -20,6 +27,10 @@ struct PrivateMeetingAssistantApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if !APPSTORE
+        // The GitHub download updates itself; the App Store updates its own copy.
+        MainActor.assumeIsolated { Updater.shared.start() }
+        #endif
         #if DEBUG
         // Starts the command-line self-test at launch, independent of whether a window is shown.
         Task { @MainActor in

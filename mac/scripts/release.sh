@@ -46,6 +46,10 @@ APP="$OUT/$APP_NAME.app"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist")
 DMG="$OUT/PrivateMeetingAssistant-$VERSION.dmg"
 codesign --verify --strict --deep "$APP"
+# The GitHub download is for Apple Silicon only (ARCHS in project.yml; whisper.framework is thinned).
+for bin in "$APP/Contents/MacOS/$APP_NAME" "$APP/Contents/Frameworks/whisper.framework/whisper"; do
+  [[ "$(lipo -archs "$bin")" == arm64 ]] || { echo "$bin isn't arm64 only: $(lipo -archs "$bin")" >&2; exit 1; }
+done
 
 if [[ "${SKIP_NOTARIZE:-0}" != 1 ]]; then
   # Staple the app itself too, so it opens offline after being copied out of the DMG.
@@ -68,4 +72,7 @@ if [[ "${SKIP_NOTARIZE:-0}" != 1 ]]; then
 fi
 
 echo "Built $DMG ($(du -h "$DMG" | cut -f1))"
-[[ "${SKIP_NOTARIZE:-0}" == 1 ]] || release_record "Developer ID" devid
+if [[ "${SKIP_NOTARIZE:-0}" != 1 ]]; then
+  release_record "Developer ID" devid
+  echo "To offer it to everyone on the GitHub download: scripts/publish-github.sh"
+fi

@@ -6,7 +6,10 @@ A native macOS app that transcribes your meetings live, then writes the summary,
 
 ## Download
 
-**[Get it free on the Mac App Store](https://apps.apple.com/app/private-meeting-assistant/id6828188643)** (macOS 26, Apple Silicon). The App Store version leaves out Google, Microsoft and Zoom sign-in and can't download Ollama; it summarizes with Apple Intelligence or your own Ollama. To get everything, build it from source (below).
+Both are free, for Macs with Apple Silicon on macOS 26 or later.
+
+- **[Mac App Store](https://apps.apple.com/app/private-meeting-assistant/id6828188643)**: sandboxed, updated by the App Store. It leaves out Google, Microsoft and Zoom sign-in and can't download Ollama; it summarizes with Apple Intelligence or your own Ollama.
+- **[GitHub Releases](https://github.com/ruyd/private-meeting-assistant/releases/latest)**: the full app as a notarized DMG. Open it and drag the app to Applications. It checks GitHub for a new version once a day and installs it when you say so (Check for Updates… in the app menu; turn the daily check off in Settings › About).
 
 ## Why it exists
 
@@ -26,7 +29,7 @@ A use case for AI-assisted software development: a small, focused app, built lar
 - **Audio and video in the meeting folder.** Save the meeting's audio (your microphone and the call, on the meeting's timeline) as `audio.m4a`, at 48 kHz stereo, and record the meeting app's window as video in `video/`, placed in the transcript where it started: with the app's sound (Record video), or with your voice mixed in too, echo removed (Record video + mic, from the button's menu). Cut size (also in the menu) leaves out the browser's tabs and the page below the video, at 720p: about 15 times smaller. Both switch on and off while recording (⇧⌘A, ⇧⌘V).
 - **Screenshots of the meeting app** during a recording (⇧⌘S), saved into the meeting folder and placed in the transcript where they were taken. They only ever capture the app you're recording, never the rest of your screen.
 - **Meeting details from your calendar (optional).** Sign in with your Google, Microsoft 365 or Zoom account in Settings › Accounts, then pick an upcoming meeting or paste a Meet, Zoom or Teams link or ID. The recording takes the meeting's subject, and its participants (organizer, you as "Me", required and optional guests, who declined) are saved with the transcript, shown on the meeting page, made searchable and given to the summary model. Access is read-only and tokens stay in your Keychain.
-- **Nothing leaves your Mac.** The only network access is downloading models (speech models from Hugging Face; Ollama and summary models if you ask for them), talking to Ollama on `localhost`, and, if you sign in to them, reading meeting details from Google, Microsoft or Zoom. Audio, transcripts and summaries are never sent to them.
+- **Nothing leaves your Mac.** The only network access is the GitHub version's daily update check, downloading models (speech models from Hugging Face; Ollama and summary models if you ask for them), talking to Ollama on `localhost`, and, if you sign in to them, reading meeting details from Google, Microsoft or Zoom. Audio, transcripts and summaries are never sent to them.
 
 ## Design
 
@@ -83,7 +86,7 @@ Unit tests cover capture helpers, voice detection, echo removal, storage and sea
 
 To build, launch and screenshot the Debug app from the command line, use `mac/scripts/run-app.sh`; Claude Code picks it up through the `run-app` skill in `.claude/skills/`. In the Claude desktop app, the preview's Run button (`.claude/launch.json`) builds and launches it and mirrors its windows in the preview pane.
 
-Debug builds also accept command-line self-tests: `--capture-test`, `--transcribe-test`, `--prepare-model` and `--install-ollama` (see `mac/PrivateMeetingAssistant/Debug/CaptureSelfTest.swift`), and `-sampleMeetings YES` shows made-up meetings instead of yours, for screenshots.
+Debug builds also accept command-line self-tests: `--capture-test`, `--transcribe-test`, `--prepare-model` and `--install-ollama` (see `mac/PrivateMeetingAssistant/Debug/CaptureSelfTest.swift`), and `-sampleMeetings YES` shows made-up meetings instead of yours, for screenshots. To try the updater, `-checkForUpdatesAtLaunch YES -updateFeedURL <url>` checks a JSON file shaped like GitHub's `releases/latest` answer instead of GitHub.
 
 ## Release
 
@@ -91,7 +94,13 @@ Debug builds also accept command-line self-tests: `--capture-test`, `--transcrib
 mac/scripts/release.sh
 ```
 
-Archives, signs, notarizes and staples the app, then wraps it in a signed and notarized DMG in `mac/build/release/`. See the comment at the top of the script for the one-time notarization setup.
+Archives, signs, notarizes and staples the app (Apple Silicon only), then wraps it in a signed and notarized DMG in `mac/build/release/`. See the comment at the top of the script for the one-time notarization setup. Then publish it:
+
+```bash
+mac/scripts/publish-github.sh
+```
+
+Creates the `vX.Y.Z` GitHub release with the DMG, its SHA-256 and the version's CHANGELOG section as notes (`DRAFT=1` for a draft). Installed copies find it within a day. The updater installs a new version only if it's signed by the same Developer ID team as the running app, and only offers versions newer than its own, so bump `MARKETING_VERSION` for every release.
 
 ## How it works
 

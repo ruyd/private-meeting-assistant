@@ -38,6 +38,18 @@ targets:
       - package: SpeexDSP
       - package: GRDB
         product: GRDB
+    postBuildScripts:
+      # Release only: whisper.framework comes as a universal binary; drop its Intel half and sign it
+      # again, so the GitHub download has no Intel code at all.
+      - name: Thin whisper.framework to arm64
+        basedOnDependencyAnalysis: false
+        script: |
+          [ "$CONFIGURATION" = Release ] || exit 0
+          fw="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/whisper.framework"
+          bin="$fw/Versions/A/whisper"
+          lipo "$bin" -verify_arch x86_64 2>/dev/null || exit 0
+          lipo "$bin" -remove x86_64 -output "$bin"
+          codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp --options runtime "$fw"
     configFiles:
       # OAuth client IDs for signing in to Google, Microsoft and Zoom (see OAUTH.md).
       Debug: Config/OAuth.xcconfig
@@ -74,6 +86,9 @@ targets:
         # microphone input silently).
         CODE_SIGN_ENTITLEMENTS: PrivateMeetingAssistant/PrivateMeetingAssistant.entitlements
       configs:
+        Release:
+          # The GitHub download (scripts/release.sh) is for Apple Silicon only.
+          ARCHS: arm64
         AppStore:
           # The App Sandbox and what it lets the app reach.
           CODE_SIGN_ENTITLEMENTS: PrivateMeetingAssistant/AppStore.entitlements

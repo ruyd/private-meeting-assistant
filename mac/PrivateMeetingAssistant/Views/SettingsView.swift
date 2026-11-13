@@ -326,9 +326,13 @@ private struct AboutSettings: View {
                     Text("Everything stays on this Mac")
                 } label: {
                     Text("Privacy")
-                    Text("Recording, transcription and summaries all run locally. The only downloads are the models, and nothing you record is ever uploaded.")
+                    Text(Self.privacyNote)
                 }
             }
+
+            #if !APPSTORE
+            UpdateSettingsSection()
+            #endif
 
             Section {
                 ForEach(Self.credits) { credit in
@@ -391,6 +395,12 @@ private struct AboutSettings: View {
             Text("These move to the Trash, and the app quits:\n" + Uninstaller.items(keepMeetings: keepMeetings).map { "• \($0.label)" }.joined(separator: "\n"))
         }
     }
+
+    #if APPSTORE
+    private static let privacyNote = "Recording, transcription and summaries all run locally. The only downloads are the models, and nothing you record is ever uploaded."
+    #else
+    private static let privacyNote = "Recording, transcription and summaries all run locally. The only downloads are the models and app updates, and nothing you record is ever uploaded."
+    #endif
 
     private var version: String {
         let info = Bundle.main.infoDictionary

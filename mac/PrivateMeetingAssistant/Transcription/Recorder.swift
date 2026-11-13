@@ -13,7 +13,9 @@ final class Recorder {
     enum Phase { case idle, loadingModel, recording, finishing }
 
     let capture = CaptureSession()
-    private(set) var phase: Phase = .idle
+    private(set) var phase: Phase = .idle {
+        didSet { RecordingActivity.shared.set(self, busy: phase != .idle) }
+    }
     private(set) var lines: [TranscriptLine] = []
     private(set) var startedAt: Date?
     /// Utterances waiting for Whisper.
@@ -783,5 +785,17 @@ private final class LiveTranscriberBox: Sendable {
             }
         }
         for transcriber in all { await transcriber.stop() }
+    }
+}
+
+/// Recordings in progress in any window. Updates wait for them, since installing relaunches the app.
+@MainActor @Observable
+final class RecordingActivity {
+    static let shared = RecordingActivity()
+    private var active: Set<ObjectIdentifier> = []
+    var isRecording: Bool { !active.isEmpty }
+
+    func set(_ recorder: AnyObject, busy: Bool) {
+        if busy { active.insert(ObjectIdentifier(recorder)) } else { active.remove(ObjectIdentifier(recorder)) }
     }
 }

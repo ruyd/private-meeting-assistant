@@ -9,7 +9,8 @@ a successful release they add the build to **Published builds** and tag the comm
 
 ## Unreleased
 
-Nothing yet.
+- Published on GitHub Releases as a notarized DMG, for Apple Silicon only (the app and its whisper.cpp framework carry no Intel code), alongside the Mac App Store.
+- The GitHub version updates itself: once a day it asks GitHub for the latest release and offers it with its notes (Install and Relaunch, Later, Skip This Version); Check for Updates… in the app menu and Settings › About › Updates check now. The download is installed only if it's signed by the same developer, and never during a recording. The App Store version has none of this.
 
 ## 1.0.0 — 2026-10-29
 

@@ -1,6 +1,6 @@
 # Privacy Policy
 
-*Private Meeting Assistant for macOS. Last updated October 29, 2026.*
+*Private Meeting Assistant for macOS. Last updated November 13, 2026.*
 
 Private Meeting Assistant records and transcribes meetings on your Mac. It is built so that what you
 record never leaves it.
@@ -25,6 +25,10 @@ You can delete any meeting from the app, or its folder in Finder.
 
 - **Model downloads**: the speech and speaker models are downloaded once from Hugging Face
   (huggingface.co). These are plain file downloads; nothing about you or your meetings is sent.
+- **Update check (direct-download version only)**: once a day the app asks GitHub (api.github.com) for
+  the latest release, and downloads it from GitHub if you choose to install it. The request carries the
+  app's version and nothing about you or your meetings. You can turn it off in Settings › About; the
+  App Store version is updated by the App Store instead.
 - **Calendar and meeting sign-in (optional, direct-download version only)**: if you sign in with Google, Microsoft 365 or Zoom, the
   app talks directly from your Mac to that service to list your upcoming meetings and their invitees.
   The sign-in tokens are kept in your Mac's Keychain. Nothing goes through the developer.
