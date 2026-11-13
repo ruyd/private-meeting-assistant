@@ -25,7 +25,7 @@ See `PRIVACY.md`.
 
 ## Pricing and Availability
 
-Paid upfront: $9.99 (US; other countries follow Apple's equivalents). Proceeds $8.49.
+Free, in every country. (1.0.0 launched at $9.99 and went free on 2026-11-12.)
 
 ## Version 1.0.0
 

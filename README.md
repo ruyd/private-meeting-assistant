@@ -6,7 +6,7 @@ A native macOS app that transcribes your meetings live, then writes the summary,
 
 ## Download
 
-**[Get it on the Mac App Store](https://apps.apple.com/app/private-meeting-assistant/id6828188643)** (macOS 26, Apple Silicon). The App Store version leaves out Google, Microsoft and Zoom sign-in and can't download Ollama; it summarizes with Apple Intelligence or your own Ollama. To get everything, build it from source (below).
+**[Get it free on the Mac App Store](https://apps.apple.com/app/private-meeting-assistant/id6828188643)** (macOS 26, Apple Silicon). The App Store version leaves out Google, Microsoft and Zoom sign-in and can't download Ollama; it summarizes with Apple Intelligence or your own Ollama. To get everything, build it from source (below).
 
 ## Why it exists
 
